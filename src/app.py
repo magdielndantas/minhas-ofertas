@@ -38,7 +38,7 @@ except ImportError:
 # Imports dos módulos locais
 from database import init_db, save_oferta, get_ofertas, get_estatisticas
 from config import carregar_config, salvar_config, CONFIG_DEFAULT
-from price_parser import extrair_preco, texto_contem_interesse, texto_contem_cupom
+from price_parser import extrair_preco, texto_contem_interesse, texto_contem_cupom, extrair_codigo_cupom, extrair_desconto, extrair_nome_produto
 
 # Cores para Windows
 if sys.platform == 'win32':
@@ -154,21 +154,32 @@ async def baixar_midia(message, pasta):
             return None
     return None
 
-async def enviar_notificacao(client, mensagem, caminho_imagem, canal_id, rate_limiter):
+async def enviar_notificacao(client, mensagem, caminho_imagem, canal_id, rate_limiter, produto=None, preco=None, desconto=None):
     await rate_limiter.wait_if_needed(canal_id or 'default')
+    
+    linhas = [mensagem]
+    
+    if produto and produto != 'N/A':
+        linhas.append(f"📦 {produto[:50]}")
+    
+    if desconto:
+        linhas.append(f"🔥 {desconto}% OFF")
+    
+    msg_final = "\n".join(linhas)
+    
     try:
         if caminho_imagem:
-            await client.send_message('me', mensagem, file=caminho_imagem)
+            await client.send_message('me', msg_final, file=caminho_imagem)
         else:
-            await client.send_message('me', mensagem)
+            await client.send_message('me', msg_final)
         logger.info("Notificacao enviada")
     except FloodWaitError as e:
         logger.warning(f"Flood detected. Aguardando {e.seconds}s...")
         await asyncio.sleep(e.seconds)
         if caminho_imagem:
-            await client.send_message('me', mensagem, file=caminho_imagem)
+            await client.send_message('me', msg_final, file=caminho_imagem)
         else:
-            await client.send_message('me', mensagem)
+            await client.send_message('me', msg_final)
     except Exception as e:
         logger.error(f"Erro ao enviar: {e}")
 
@@ -265,10 +276,15 @@ async def cmd_buscar_historico(client, config, dry_run=False, enviar_telegram=Fa
             logger.warning(f"Erro em {canal}: {e}")
     
     # Salvar no banco
+    salvas = 0
+    duplicadas = 0
     for oferta in ofertas:
-        save_oferta(oferta)
+        if save_oferta(oferta):
+            salvas += 1
+        else:
+            duplicadas += 1
     
-    print(c_green(f"[OK] Busca concluida! {len(ofertas)} ofertas salvas no banco"))
+    print(c_green(f"[OK] Busca concluida! {salvas} ofertas salvas, {duplicadas} duplicadas"))
     print(c_green(f"[OK] Total no banco: {get_estatisticas()['total']} ofertas"))
 
 # ==================== GERAR HTML ====================
@@ -277,7 +293,7 @@ def gerar_html(ofertas, output_path):
 <html class="light" lang="pt-BR"><head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>DEAL.EDIT | Ofertas</title>
+<title>Minhas Ofertas</title>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@200;300;400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
@@ -472,6 +488,10 @@ def main():
                     preco_info = f"R$ {preco:.2f}" if preco else "Sem preco"
                     print(c_green(f"[OK] Oferta em {canal_nome} - {preco_info}"))
                     
+                    codigo_cupom = extrair_codigo_cupom(mensagem) if texto_contem_cupom(mensagem, config) else None
+                    desconto = extrair_desconto(mensagem)
+                    nome_produto = extrair_nome_produto(mensagem)
+                    
                     oferta = {
                         'canal': canal_nome,
                         'preco': preco,
@@ -479,16 +499,20 @@ def main():
                         'data': datetime.now().strftime('%d/%m/%Y %H:%M'),
                         'mensagem': mensagem[:200],
                         'imagem': caminho_imagem,
-                        'tipo': 'oferta'
+                        'tipo': 'oferta',
+                        'codigo': codigo_cupom,
+                        'desconto': desconto,
+                        'produto': nome_produto
                     }
-                    save_oferta(oferta)
-                    
-                    if not args.dry_run:
-                        msg = f"[ALERT] OFERTA\n{canal_nome}\n{preco_info}\n{link}"
-                        await enviar_notificacao(client, msg, caminho_imagem, canal_username, rate_limiter)
+                    if save_oferta(oferta):
+                        if not args.dry_run:
+                            msg = f"[ALERT] OFERTA\n{canal_nome}\n{preco_info}\n{link}"
+                            await enviar_notificacao(client, msg, caminho_imagem, canal_username, rate_limiter, produto=nome_produto, preco=preco, desconto=desconto)
                 
                 elif texto_contem_cupom(mensagem, config):
                     print(c_cyan(f"[CUPOM] {canal_nome}"))
+                    
+                    codigo_cupom = extrair_codigo_cupom(mensagem)
                     
                     oferta = {
                         'canal': canal_nome,
@@ -497,13 +521,13 @@ def main():
                         'data': datetime.now().strftime('%d/%m/%Y %H:%M'),
                         'mensagem': mensagem[:200],
                         'imagem': caminho_imagem,
-                        'tipo': 'cupom'
+                        'tipo': 'cupom',
+                        'codigo': codigo_cupom
                     }
-                    save_oferta(oferta)
-                    
-                    if not args.dry_run:
-                        msg = f"[CUPOM] {canal_nome}\n{link}"
-                        await enviar_notificacao(client, msg, caminho_imagem, canal_username, rate_limiter)
+                    if save_oferta(oferta):
+                        if not args.dry_run:
+                            msg = f"[CUPOM] {canal_nome}" + (f"\nCódigo: {codigo_cupom}" if codigo_cupom else "") + f"\n{link}"
+                            await enviar_notificacao(client, msg, caminho_imagem, canal_username, rate_limiter)
             
             try:
                 await client.run_until_disconnected()

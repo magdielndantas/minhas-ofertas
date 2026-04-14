@@ -19,6 +19,9 @@ def init_db():
             mensagem TEXT,
             imagem TEXT,
             tipo TEXT DEFAULT 'oferta',
+            codigo TEXT,
+            desconto INTEGER,
+            produto TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -36,12 +39,31 @@ def init_db():
     conn.close()
 
 def save_oferta(oferta):
-    """Salva uma oferta no banco"""
+    """Salva uma oferta no banco, evitando duplicatas"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
+    
+    link = oferta.get('link')
+    canal = oferta.get('canal')
+    mensagem = oferta.get('mensagem', '')[:100]
+    produto = oferta.get('produto')
+    preco = oferta.get('preco')
+    
+    if link and link != '#':
+        cursor.execute("SELECT id FROM ofertas WHERE link = ? LIMIT 1", (link,))
+        if cursor.fetchone():
+            conn.close()
+            return False
+    
+    if canal and mensagem:
+        cursor.execute("SELECT id FROM ofertas WHERE canal = ? AND SUBSTR(mensagem, 1, 100) = ? LIMIT 1", (canal, mensagem))
+        if cursor.fetchone():
+            conn.close()
+            return False
+    
     cursor.execute("""
-        INSERT INTO ofertas (canal, preco, link, data, mensagem, imagem, tipo)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO ofertas (canal, preco, link, data, mensagem, imagem, tipo, codigo, desconto, produto)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         oferta.get('canal'),
         oferta.get('preco'),
@@ -49,12 +71,16 @@ def save_oferta(oferta):
         oferta.get('data'),
         oferta.get('mensagem'),
         oferta.get('imagem'),
-        oferta.get('tipo', 'oferta')
+        oferta.get('tipo', 'oferta'),
+        oferta.get('codigo'),
+        oferta.get('desconto'),
+        oferta.get('produto')
     ))
     conn.commit()
     conn.close()
+    return True
 
-def get_ofertas(filtros=None, limite=100):
+def get_ofertas(filtros=None, limite=100, offset=0):
     """Busca ofertas com filtros opcionais"""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -64,6 +90,9 @@ def get_ofertas(filtros=None, limite=100):
     params = []
     
     if filtros:
+        if filtros.get('id'):
+            query += " AND id = ?"
+            params.append(filtros['id'])
         if filtros.get('canal'):
             query += " AND canal LIKE ?"
             params.append(f"%{filtros['canal']}%")
@@ -80,9 +109,21 @@ def get_ofertas(filtros=None, limite=100):
             query += " AND tipo = ?"
             params.append(filtros['tipo'])
         if filtros.get('search'):
-            query += " AND (mensagem LIKE ? OR canal LIKE ?)"
+            query += " AND (mensagem LIKE ? OR canal LIKE ? OR codigo LIKE ?)"
             params.append(f"%{filtros['search']}%")
             params.append(f"%{filtros['search']}%")
+            params.append(f"%{filtros['search']}%")
+        if filtros.get('codigo'):
+            query += " AND codigo LIKE ?"
+            params.append(f"%{filtros['codigo']}%")
+        if filtros.get('periodo'):
+            periodo = filtros['periodo']
+            if periodo == 'hoje':
+                query += " AND date(created_at) = date('now')"
+            elif periodo == 'semana':
+                query += " AND date(created_at) >= date('now', '-7 days')"
+            elif periodo == 'mes':
+                query += " AND date(created_at) >= date('now', '-30 days')"
         
         ordenar = filtros.get('ordenar', 'created_at')
         ordem = 'DESC' if filtros.get('ordem', 'desc') == 'desc' else 'ASC'
@@ -90,14 +131,35 @@ def get_ofertas(filtros=None, limite=100):
     else:
         query += " ORDER BY created_at DESC"
     
-    query += " LIMIT ?"
-    params.append(limite)
+    query += " LIMIT ? OFFSET ?"
+    params.extend([limite, offset])
     
     cursor.execute(query, params)
     rows = cursor.fetchall()
     conn.close()
     
     return [dict(row) for row in rows]
+
+
+def get_todas_ofertas_com_produto():
+    """Retorna todas as ofertas que têm produto e preço"""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM ofertas WHERE produto IS NOT NULL AND preco IS NOT NULL ORDER BY created_at DESC LIMIT 500")
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def get_canais():
+    """Retorna lista de canais únicos"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT DISTINCT canal FROM ofertas ORDER BY canal")
+    canais = [row[0] for row in cursor.fetchall()]
+    conn.close()
+    return canais
 
 def get_estatisticas():
     """Retorna estatísticas das ofertas"""
@@ -129,3 +191,76 @@ def get_estatisticas():
         'preco_max': precos[1],
         'preco_avg': precos[2]
     }
+
+
+def get_ofertas_similares(produto, exclude_id=None, limite=10):
+    """Busca ofertas com produto similar (mesmo produto exato - algoritmo Jaccard)"""
+    if not produto:
+        return []
+    
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    palavras = produto.split()[:5]
+    if not palavras:
+        conn.close()
+        return []
+    
+    conditions = []
+    params = []
+    for palavra in palavras:
+        if len(palavra) > 2:
+            conditions.append("produto LIKE ?")
+            params.append(f"%{palavra}%")
+    
+    if not conditions:
+        conn.close()
+        return []
+    
+    query = "SELECT * FROM ofertas WHERE " + " OR ".join(conditions) + " AND preco IS NOT NULL"
+    if exclude_id:
+        query += " AND id != ?"
+        params.append(exclude_id)
+    query += " ORDER BY preco ASC LIMIT ?"
+    params.append(limite)
+    
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    conn.close()
+    
+    return [dict(row) for row in rows]
+
+
+def get_ofertas_por_palavras(palavras, exclude_id=None, limite=10):
+    """Busca ofertas por palavras relacionadas (keywords diferentes mas da mesma categoria)"""
+    if not palavras or len(palavras) == 0:
+        return []
+    
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    conditions = []
+    params = []
+    for palavra in palavras:
+        if palavra and len(palavra) > 2:
+            conditions.append("produto LIKE ?")
+            params.append(f"%{palavra}%")
+    
+    if not conditions:
+        conn.close()
+        return []
+    
+    query = "SELECT * FROM ofertas WHERE (" + " OR ".join(conditions) + ") AND preco IS NOT NULL"
+    if exclude_id:
+        query += " AND id != ?"
+        params.append(exclude_id)
+    query += " ORDER BY preco ASC LIMIT ?"
+    params.append(limite)
+    
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    conn.close()
+    
+    return [dict(row) for row in rows]

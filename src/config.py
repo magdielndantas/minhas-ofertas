@@ -19,7 +19,8 @@ CONFIG_DEFAULT = {
     ],
     "cupons": [
         "cupom", "codigo", "desconto", "promocode", "coupon",
-        "frete gratis", "frete gratuito"
+        "frete gratis", "frete gratuito", "off", "cashback",
+        "exclusivo", "desconto extra", "save", "off"
     ],
     "termos_ignorar": ["usado", "seminovo", "defeito", "segunda mão", "reembalado"],
     "preco_maximo": None,
