@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+ENV/
+venv/
+.venv/
+
+# Dados sensíveis
+.env
+*.db
+data/imagens/
+
+# Logs
+logs/
+*.log
+
+# Output
+output/
+*.html
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Credenciais (NUNCA commitar)
+credentials.json
+session.session
+*.session

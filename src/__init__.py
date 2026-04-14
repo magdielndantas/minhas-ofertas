@@ -1,0 +1,1 @@
+# Minhas Ofertas - Monitor de Ofertas Telegram
