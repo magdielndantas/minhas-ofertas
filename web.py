@@ -26,11 +26,15 @@ def oferta_to_dict(oferta):
         else:
             imagem = None
     
+    link = oferta.get('link', '#')
+    if not link or not link.startswith('http'):
+        link = '#'
+    
     return {
         'id': oferta.get('id'),
         'canal': oferta.get('canal', 'N/A'),
         'preco': oferta.get('preco'),
-        'link': oferta.get('link', '#'),
+        'link': link,
         'mensagem': oferta.get('mensagem', ''),
         'imagem': imagem,
         'data': oferta.get('data', ''),
