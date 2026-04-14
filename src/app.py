@@ -141,19 +141,16 @@ class RateLimiter:
             self.message_count[minute_key] = self.message_count.get(minute_key, 0) + 1
 
 # ==================== DOWNLOAD IMAGENS ====================
-async def get_midia_link(message, pasta):
+async def baixar_midia(message, pasta):
     if message.photo:
         try:
-            chat = message.chat
-            username = getattr(chat, 'username', None)
-            if username:
-                return f"https://t.me/{username}/{message.id}/{message.photo.id}"
-            else:
-                chat_id = chat.id if hasattr(chat, 'id') else None
-                if chat_id:
-                    return f"https://t.me/c/{abs(chat_id)}/{message.id}/{message.photo.id}"
+            Path(pasta).mkdir(exist_ok=True)
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"{pasta}/temp_{timestamp}.jpg"
+            await message.download_media(file=filename)
+            return filename
         except Exception as e:
-            logger.warning(f"Erro ao obter link da imagem: {e}")
+            logger.warning(f"Erro ao baixar imagem: {e}")
             return None
     return None
 
@@ -469,7 +466,7 @@ def main():
                 else:
                     link = "#"
                 
-                caminho_imagem = await get_midia_link(event.message, pasta)
+                caminho_imagem = await baixar_midia(event.message, pasta)
                 
                 if texto_contem_interesse(mensagem, config):
                     preco = extrair_preco(mensagem)
