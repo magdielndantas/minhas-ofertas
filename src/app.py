@@ -374,6 +374,8 @@ def main():
     parser.add_argument('--dry-run', action='store_true', help='Testar sem enviar')
     parser.add_argument('--verbose', '-v', action='store_true', help='Modo verboso')
     parser.add_argument('--view', action='store_true', help='Gerar HTML do banco')
+    parser.add_argument('--server', action='store_true', help='Iniciar servidor web')
+    parser.add_argument('--port', type=int, default=5000, help='Porta do servidor (default: 5000)')
     parser.add_argument('--estats', action='store_true', help='Estatisticas do banco')
     parser.add_argument('--save-config', metavar='ARQUIVO', help='Salvar config')
     
@@ -401,6 +403,12 @@ def main():
         output.parent.mkdir(exist_ok=True)
         gerar_html(ofertas, output)
         print(c_green(f"[OK] HTML gerado: {output}"))
+        return
+    
+    if args.server:
+        from web import app
+        print(c_cyan(f"[*] Servidor iniciado em http://localhost:{args.port}"))
+        app.run(host='0.0.0.0', port=args.port)
         return
     
     if args.list:
