@@ -16,8 +16,9 @@ def oferta_to_dict(oferta):
     """Converte oferta para dict com valores padrão"""
     imagem = oferta.get('imagem')
     if imagem:
-        if imagem.startswith('http'):
-            pass
+        if imagem.startswith('https://t.me/'):
+            if 'None' in imagem or '/c/' not in imagem:
+                imagem = None
         elif imagem.startswith('data/imagens/'):
             imagem = '/' + imagem
         elif os.path.exists(imagem):

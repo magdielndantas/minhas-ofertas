@@ -144,8 +144,14 @@ class RateLimiter:
 async def get_midia_link(message, pasta):
     if message.photo:
         try:
-            photo = message.photo
-            return f"https://t.me/{message.chat.username or message.chat.id}/{message.id}/{photo.id}"
+            chat = message.chat
+            username = getattr(chat, 'username', None)
+            if username:
+                return f"https://t.me/{username}/{message.id}/{message.photo.id}"
+            else:
+                chat_id = chat.id if hasattr(chat, 'id') else None
+                if chat_id:
+                    return f"https://t.me/c/{abs(chat_id)}/{message.id}/{message.photo.id}"
         except Exception as e:
             logger.warning(f"Erro ao obter link da imagem: {e}")
             return None
