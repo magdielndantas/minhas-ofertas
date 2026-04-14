@@ -27,7 +27,7 @@ def oferta_to_dict(oferta):
             imagem = None
     
     link = oferta.get('link', '#')
-    if not link or not link.startswith('http'):
+    if link == 'Link indisponivel' or not link or not link.startswith('http'):
         link = '#'
     
     return {

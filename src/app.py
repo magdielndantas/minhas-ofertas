@@ -229,13 +229,21 @@ async def cmd_buscar_historico(client, config, dry_run=False, enviar_telegram=Fa
                     preco = extrair_preco(message.message)
                     
                     canal_username = getattr(canal_entity, 'username', None)
-                    link = f"https://t.me/{canal_username}/{message.id}" if canal_username else "Link indisponivel"
+                    canal_id = canal_entity.id if hasattr(canal_entity, 'id') else None
+                    if canal_username:
+                        link = f"https://t.me/{canal_username}/{message.id}"
+                    elif canal_id:
+                        link = f"https://t.me/c/{abs(canal_id)}/{message.id}"
+                    else:
+                        link = "#"
                     canal_nome = getattr(canal_entity, 'title', canal)
                     
                     caminho_imagem = None
                     if message.photo:
-                        canal_username = getattr(canal_entity, 'username', canal)
-                        caminho_imagem = f"https://t.me/{canal_username}/{message.id}"
+                        if canal_username:
+                            caminho_imagem = f"https://t.me/{canal_username}/{message.id}/{message.photo.id}"
+                        elif canal_id:
+                            caminho_imagem = f"https://t.me/c/{abs(canal_id)}/{message.id}/{message.photo.id}"
                     
                     oferta = {
                         'canal': canal_nome,
@@ -452,7 +460,15 @@ def main():
                 canal = await event.get_chat()
                 canal_nome = getattr(canal, 'title', canal.username)
                 canal_username = getattr(canal, 'username', None)
-                link = f"https://t.me/{canal_username}/{event.message.id}" if canal_username else "#"
+                canal_id = canal.id if hasattr(canal, 'id') else None
+                
+                if canal_username:
+                    link = f"https://t.me/{canal_username}/{event.message.id}"
+                elif canal_id:
+                    link = f"https://t.me/c/{abs(canal_id)}/{event.message.id}"
+                else:
+                    link = "#"
+                
                 caminho_imagem = await get_midia_link(event.message, pasta)
                 
                 if texto_contem_interesse(mensagem, config):
