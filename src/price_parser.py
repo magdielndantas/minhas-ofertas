@@ -108,7 +108,7 @@ def texto_contem_cupom(texto, config):
     if not texto:
         return False
     
-    texto_lower = texto.lower()
+    texto_lower = texto.lower().replace('á', 'a').replace('é', 'e').replace('í', 'i').replace('ó', 'o').replace('ú', 'u').replace('ã', 'a').replace('õ', 'o')
     
     cupons = config.get('cupons', [])
     return any(cupom in texto_lower for cupom in cupons)

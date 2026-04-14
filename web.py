@@ -18,8 +18,12 @@ def oferta_to_dict(oferta):
     if imagem:
         if imagem.startswith('http'):
             pass
-        else:
+        elif imagem.startswith('data/imagens/'):
+            imagem = '/' + imagem
+        elif os.path.exists(imagem):
             imagem = '/data/imagens/' + os.path.basename(imagem)
+        else:
+            imagem = None
     
     return {
         'id': oferta.get('id'),
