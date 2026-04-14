@@ -17,7 +17,7 @@ def oferta_to_dict(oferta):
     imagem = oferta.get('imagem')
     if imagem:
         if imagem.startswith('https://t.me/'):
-            if 'None' in imagem or '/c/' not in imagem:
+            if '/None/' in imagem:
                 imagem = None
         elif imagem.startswith('data/imagens/'):
             imagem = '/' + imagem
