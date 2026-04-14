@@ -420,48 +420,54 @@ def main():
     API_ID, API_HASH = get_env_credentials()
     client = TelegramClient('monitor_ofertas', API_ID, API_HASH)
     
-    if args.history:
-        asyncio.run(client.start())
-        asyncio.run(cmd_buscar_historico(client, config, args.dry_run, args.telegram))
-        client.disconnect()
-    else:
-        # Monitoramento em tempo real
-        client.start()
-        canais = config.get('canais', CONFIG_DEFAULT['canais'])
-        rate_limiter = RateLimiter(
-            config.get('rate_limit', {}).get('max_por_minuto', 20),
-            config.get('rate_limit', {}).get('delay_segundos', 2)
-        )
+    async def run_app():
+        await client.start()
         
-        print(c_cyan(f"\n[START] Monitorando {len(canais)} canais..."))
-        print(c_cyan("[*] Aguardando ofertas (Ctrl+C para parar)"))
-        
-        pasta = config.get('imagens_pasta', 'data/imagens')
-        
-        @client.on(events.NewMessage(chats=canais))
-        async def handler(event):
-            mensagem = event.message.message
-            if not mensagem or not texto_contem_interesse(mensagem, config):
-                return
+        if args.history:
+            await cmd_buscar_historico(client, config, args.dry_run, args.telegram)
+        else:
+            canais = config.get('canais', CONFIG_DEFAULT['canais'])
+            rate_limiter = RateLimiter(
+                config.get('rate_limit', {}).get('max_por_minuto', 20),
+                config.get('rate_limit', {}).get('delay_segundos', 2)
+            )
             
-            canal = await event.get_chat()
-            canal_nome = getattr(canal, 'title', canal.username)
-            preco = extrair_preco(mensagem)
-            preco_info = f"R$ {preco:.2f}" if preco else "Sem preco"
+            print(c_cyan(f"\n[START] Monitorando {len(canais)} canais..."))
+            print(c_cyan("[*] Aguardando ofertas (Ctrl+C para parar)"))
             
-            canal_username = getattr(canal, 'username', None)
-            link = f"https://t.me/{canal_username}/{event.message.id}" if canal_username else "#"
+            pasta = config.get('imagens_pasta', 'data/imagens')
             
-            print(c_green(f"[OK] Oferta em {canal_nome} - {preco_info}"))
+            @client.on(events.NewMessage(chats=canais))
+            async def handler(event):
+                mensagem = event.message.message
+                if not mensagem or not texto_contem_interesse(mensagem, config):
+                    return
+                
+                canal = await event.get_chat()
+                canal_nome = getattr(canal, 'title', canal.username)
+                preco = extrair_preco(mensagem)
+                preco_info = f"R$ {preco:.2f}" if preco else "Sem preco"
+                
+                canal_username = getattr(canal, 'username', None)
+                link = f"https://t.me/{canal_username}/{event.message.id}" if canal_username else "#"
+                
+                print(c_green(f"[OK] Oferta em {canal_nome} - {preco_info}"))
+                
+                if not args.dry_run:
+                    caminho_imagem = await baixar_midia(event.message, pasta)
+                    msg = f"[ALERT] OFERTA\n{canal_nome}\n{preco_info}\n{link}"
+                    await enviar_notificacao(client, msg, caminho_imagem, canal_username, rate_limiter)
+                    if caminho_imagem and os.path.exists(caminho_imagem):
+                        os.remove(caminho_imagem)
             
-            if not args.dry_run:
-                caminho_imagem = await baixar_midia(event.message, pasta)
-                msg = f"[ALERT] OFERTA\n{canal_nome}\n{preco_info}\n{link}"
-                await enviar_notificacao(client, msg, caminho_imagem, canal_username, rate_limiter)
-                if caminho_imagem and os.path.exists(caminho_imagem):
-                    os.remove(caminho_imagem)
-        
-        client.run_until_disconnected()
+            try:
+                await client.run_until_disconnected()
+            except KeyboardInterrupt:
+                print(c_yellow("\n[*] Encerrando..."))
+            finally:
+                await client.disconnect()
+    
+    asyncio.run(run_app())
 
 if __name__ == '__main__':
     main()
