@@ -101,3 +101,14 @@ def texto_contem_interesse(texto, config):
             return False
     
     return True
+
+
+def texto_contem_cupom(texto, config):
+    """Verifica se o texto contém cupons de desconto"""
+    if not texto:
+        return False
+    
+    texto_lower = texto.lower()
+    
+    cupons = config.get('cupons', [])
+    return any(cupom in texto_lower for cupom in cupons)

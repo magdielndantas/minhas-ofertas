@@ -17,6 +17,10 @@ CONFIG_DEFAULT = {
         "webcam", "microfone", "cadeira gamer", "mousepad",
         "gpu", "placa de vídeo", "rtx", "geforce"
     ],
+    "cupons": [
+        "cupom", "codigo", "desconto", "promocode", "coupon",
+        "frete gratis", "frete gratuito"
+    ],
     "termos_ignorar": ["usado", "seminovo", "defeito", "segunda mão", "reembalado"],
     "preco_maximo": None,
     "rate_limit": {"max_por_minuto": 20, "delay_segundos": 2},

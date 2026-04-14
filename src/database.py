@@ -18,12 +18,20 @@ def init_db():
             data TEXT,
             mensagem TEXT,
             imagem TEXT,
+            tipo TEXT DEFAULT 'oferta',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_canal ON ofertas(canal)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_preco ON ofertas(preco)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_data ON ofertas(data)")
+    
+    try:
+        cursor.execute("SELECT tipo FROM ofertas LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("ALTER TABLE ofertas ADD COLUMN tipo TEXT DEFAULT 'oferta'")
+    
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_tipo ON ofertas(tipo)")
     conn.commit()
     conn.close()
 
@@ -32,15 +40,16 @@ def save_oferta(oferta):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO ofertas (canal, preco, link, data, mensagem, imagem)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO ofertas (canal, preco, link, data, mensagem, imagem, tipo)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
     """, (
         oferta.get('canal'),
         oferta.get('preco'),
         oferta.get('link'),
         oferta.get('data'),
         oferta.get('mensagem'),
-        oferta.get('imagem')
+        oferta.get('imagem'),
+        oferta.get('tipo', 'oferta')
     ))
     conn.commit()
     conn.close()
@@ -67,8 +76,21 @@ def get_ofertas(filtros=None, limite=100):
         if filtros.get('palavra'):
             query += " AND mensagem LIKE ?"
             params.append(f"%{filtros['palavra']}%")
+        if filtros.get('tipo'):
+            query += " AND tipo = ?"
+            params.append(filtros['tipo'])
+        if filtros.get('search'):
+            query += " AND (mensagem LIKE ? OR canal LIKE ?)"
+            params.append(f"%{filtros['search']}%")
+            params.append(f"%{filtros['search']}%")
+        
+        ordenar = filtros.get('ordenar', 'created_at')
+        ordem = 'DESC' if filtros.get('ordem', 'desc') == 'desc' else 'ASC'
+        query += f" ORDER BY {ordenar} {ordem}"
+    else:
+        query += " ORDER BY created_at DESC"
     
-    query += " ORDER BY created_at DESC LIMIT ?"
+    query += " LIMIT ?"
     params.append(limite)
     
     cursor.execute(query, params)
@@ -80,13 +102,16 @@ def get_ofertas(filtros=None, limite=100):
 def get_estatisticas():
     """Retorna estatísticas das ofertas"""
     if not os.path.exists(DB_PATH):
-        return {'total': 0, 'top_canais': [], 'preco_min': None, 'preco_max': None, 'preco_avg': None}
+        return {'total': 0, 'cupons': 0, 'top_canais': [], 'preco_min': None, 'preco_max': None, 'preco_avg': None}
     
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
     cursor.execute("SELECT COUNT(*) FROM ofertas")
     total = cursor.fetchone()[0] or 0
+    
+    cursor.execute("SELECT COUNT(*) FROM ofertas WHERE tipo = 'cupom'")
+    cupons = cursor.fetchone()[0] or 0
     
     cursor.execute("SELECT canal, COUNT(*) as cnt FROM ofertas GROUP BY canal ORDER BY cnt DESC LIMIT 10")
     top_canais = cursor.fetchall()
@@ -98,6 +123,7 @@ def get_estatisticas():
     
     return {
         'total': total,
+        'cupons': cupons,
         'top_canais': top_canais,
         'preco_min': precos[0],
         'preco_max': precos[1],

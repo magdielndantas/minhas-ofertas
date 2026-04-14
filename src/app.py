@@ -38,7 +38,7 @@ except ImportError:
 # Imports dos módulos locais
 from database import init_db, save_oferta, get_ofertas, get_estatisticas
 from config import carregar_config, salvar_config, CONFIG_DEFAULT
-from price_parser import extrair_preco, texto_contem_interesse
+from price_parser import extrair_preco, texto_contem_interesse, texto_contem_cupom
 
 # Cores para Windows
 if sys.platform == 'win32':
@@ -440,23 +440,52 @@ def main():
             @client.on(events.NewMessage(chats=canais))
             async def handler(event):
                 mensagem = event.message.message
-                if not mensagem or not texto_contem_interesse(mensagem, config):
+                if not mensagem:
                     return
                 
                 canal = await event.get_chat()
                 canal_nome = getattr(canal, 'title', canal.username)
-                preco = extrair_preco(mensagem)
-                preco_info = f"R$ {preco:.2f}" if preco else "Sem preco"
-                
                 canal_username = getattr(canal, 'username', None)
                 link = f"https://t.me/{canal_username}/{event.message.id}" if canal_username else "#"
+                caminho_imagem = await get_midia_link(event.message, pasta)
                 
-                print(c_green(f"[OK] Oferta em {canal_nome} - {preco_info}"))
+                if texto_contem_interesse(mensagem, config):
+                    preco = extrair_preco(mensagem)
+                    preco_info = f"R$ {preco:.2f}" if preco else "Sem preco"
+                    print(c_green(f"[OK] Oferta em {canal_nome} - {preco_info}"))
+                    
+                    oferta = {
+                        'canal': canal_nome,
+                        'preco': preco,
+                        'link': link,
+                        'data': datetime.now().strftime('%d/%m/%Y %H:%M'),
+                        'mensagem': mensagem[:200],
+                        'imagem': caminho_imagem,
+                        'tipo': 'oferta'
+                    }
+                    save_oferta(oferta)
+                    
+                    if not args.dry_run:
+                        msg = f"[ALERT] OFERTA\n{canal_nome}\n{preco_info}\n{link}"
+                        await enviar_notificacao(client, msg, caminho_imagem, canal_username, rate_limiter)
                 
-                if not args.dry_run:
-                    caminho_imagem = await get_midia_link(event.message, pasta)
-                    msg = f"[ALERT] OFERTA\n{canal_nome}\n{preco_info}\n{link}"
-                    await enviar_notificacao(client, msg, caminho_imagem, canal_username, rate_limiter)
+                elif texto_contem_cupom(mensagem, config):
+                    print(c_cyan(f"[CUPOM] {canal_nome}"))
+                    
+                    oferta = {
+                        'canal': canal_nome,
+                        'preco': None,
+                        'link': link,
+                        'data': datetime.now().strftime('%d/%m/%Y %H:%M'),
+                        'mensagem': mensagem[:200],
+                        'imagem': caminho_imagem,
+                        'tipo': 'cupom'
+                    }
+                    save_oferta(oferta)
+                    
+                    if not args.dry_run:
+                        msg = f"[CUPOM] {canal_nome}\n{link}"
+                        await enviar_notificacao(client, msg, caminho_imagem, canal_username, rate_limiter)
             
             try:
                 await client.run_until_disconnected()

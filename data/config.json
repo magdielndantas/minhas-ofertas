@@ -1,0 +1,58 @@
+{
+  "canais": [
+    "ofertasdodiaon",
+    "promocasinha",
+    "vipsuperofertas",
+    "promopraeles",
+    "promobrinquedo",
+    "EconomizandocomJP",
+    "promocaozinha",
+    "meusmartphoneofertas",
+    "showofertas2",
+    "nerdofertas",
+    "cludeofertas",
+    "comoecomofaz",
+    "topofertasbabykids",
+    "melhoresprecosBR"
+  ],
+  "palavras_chave": [
+    "mouse",
+    "teclado",
+    "monitor",
+    "fone",
+    "headset",
+    "webcam",
+    "microfone",
+    "cadeira gamer",
+    "mousepad",
+    "gpu",
+    "placa de vídeo",
+    "rtx",
+    "geforce"
+  ],
+  "cupons": [
+    "cupom",
+    "codigo",
+    "desconto",
+    "promocode",
+    "coupon",
+    "desconto extra",
+    "off",
+    "%",
+    "frete gratis",
+    "frete gratuito"
+  ],
+  "termos_ignorar": [
+    "usado",
+    "seminovo",
+    "defeito",
+    "segunda mão",
+    "reembalado"
+  ],
+  "preco_maximo": null,
+  "rate_limit": {
+    "max_por_minuto": 20,
+    "delay_segundos": 2
+  },
+  "imagens_pasta": "data/imagens"
+}
