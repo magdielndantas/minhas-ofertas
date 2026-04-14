@@ -492,6 +492,9 @@ def main():
                     desconto = extrair_desconto(mensagem)
                     nome_produto = extrair_nome_produto(mensagem)
                     
+                    # Se tem cupom/desconto mas não tem preço, é cupom
+                    tipo_oferta = 'cupom' if (codigo_cupom or desconto) and not preco else 'oferta'
+                    
                     oferta = {
                         'canal': canal_nome,
                         'preco': preco,
@@ -499,7 +502,7 @@ def main():
                         'data': datetime.now().strftime('%d/%m/%Y %H:%M'),
                         'mensagem': mensagem[:200],
                         'imagem': caminho_imagem,
-                        'tipo': 'oferta',
+                        'tipo': tipo_oferta,
                         'codigo': codigo_cupom,
                         'desconto': desconto,
                         'produto': nome_produto

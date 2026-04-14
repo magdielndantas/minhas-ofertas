@@ -224,6 +224,12 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 </form>
             </div>
 
+            <!-- Tabs -->
+            <div class="flex border-b border-outline">
+                <button id="tab-ofertas" class="px-6 py-3 font-bold text-primary border-b-2 border-primary" onclick="switchTab('ofertas')">Ofertas</button>
+                <button id="tab-cupons" class="px-6 py-3 font-bold text-on-surface-variant hover:text-on-surface" onclick="switchTab('cupons')">Cupons</button>
+            </div>
+
             <!-- Stats -->
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div class="bg-primary-container rounded-lg p-6 flex items-center gap-4">
@@ -551,11 +557,86 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             }
         }
 
+        document.getElementById('tipo').addEventListener('change', function() {
+            var tipo = this.value;
+            if (tipo === 'cupom') {
+                switchTab('cupons');
+            } else if (tipo === 'oferta') {
+                switchTab('ofertas');
+            }
+        });
+
         loadCanais();
         loadOfertas(true);
         setupInfiniteScroll();
         setupAutoRefresh();
-    </script>
+
+        var currentTab = 'ofertas';
+
+        function switchTab(tab) {
+            currentTab = tab;
+            document.getElementById('tab-ofertas').className = tab === 'ofertas' ? 'px-6 py-3 font-bold text-primary border-b-2 border-primary' : 'px-6 py-3 font-bold text-on-surface-variant hover:text-on-surface';
+            document.getElementById('tab-cupons').className = tab === 'cupons' ? 'px-6 py-3 font-bold text-primary border-b-2 border-primary' : 'px-6 py-3 font-bold text-on-surface-variant hover:text-on-surface';
+            
+            var tipoSelect = document.getElementById('tipo');
+            if (tab === 'cupons') {
+                tipoSelect.value = 'cupom';
+            } else {
+                tipoSelect.value = 'oferta';
+            }
+            loadOfertas(true);
+        }
+
+        var debounceTimer;
+        var filtros = ['search', 'preco_min', 'preco_max', 'tipo', 'canal', 'periodo', 'ordenar', 'ordem'];
+        for (var i = 0; i < filtros.length; i++) {
+            var el = document.getElementById(filtros[i]);
+            if (el) {
+                el.addEventListener('input', function() {
+                    clearTimeout(debounceTimer);
+                    debounceTimer = setTimeout(loadOfertas, 500);
+                });
+                el.addEventListener('change', function() {
+                    clearTimeout(debounceTimer);
+                    debounceTimer = setTimeout(loadOfertas, 500);
+                });
+            }
+        }
+
+        document.getElementById('tipo').addEventListener('change', function() {
+            var tipo = this.value;
+            if (tipo === 'cupom') {
+                switchTab('cupons');
+            } else if (tipo === 'oferta') {
+                switchTab('ofertas');
+            }
+        });
+        }
+
+        function renderOferta(oferta, isLowestPrice = false) {
+            var preco = oferta.preco ? 'R$ ' + Number(oferta.preco).toLocaleString('pt-BR', {minimumFractionDigits: 2}) : 'Grátis';
+            var tipoLabel = oferta.tipo === 'cupom' ? '<span class="text-xs bg-tertiary-container text-on-tertiary-container px-2 py-1 rounded font-bold">CUPOM</span>' : '';
+            var descontoLabel = oferta.desconto ? '<span class="text-xs bg-green-600 text-white px-2 py-1 rounded font-bold">' + oferta.desconto + '% OFF</span>' : '';
+            var melhorPrecoBadge = isLowestPrice ? '<span class="text-xs bg-blue-600 text-white px-2 py-1 rounded font-bold">MELHOR PREÇO</span>' : '';
+            var imgSrc = oferta.imagem ? oferta.imagem : '';
+            var imgHtml = imgSrc ? '<img class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" src="' + imgSrc + '" />' : '<span class="material-symbols-outlined text-[#834c4c] text-4xl">shopping_cart</span>';
+            var msg = oferta.mensagem || '';
+            if (msg.length > 150) msg = msg.substring(0, 150) + '...';
+            var codigoCupom = oferta.codigo ? '<div class="text-sm font-bold text-primary mt-2">Código: ' + String(oferta.codigo).replace(/</g, '&lt;') + '</div>' : '';
+            var canal = oferta.canal || 'N/A';
+            var link = oferta.link || '#';
+            
+            var html = '<div class="bg-surface-container-low rounded-lg p-1 overflow-hidden group cursor-pointer hover:ring-2 hover:ring-primary transition" onclick="openModal(' + oferta.id + ')">';
+            html += '<div class="relative h-64 overflow-hidden rounded-lg">' + imgHtml + '</div>';
+            html += '<div class="p-6">';
+            html += '<div class="flex justify-between items-start mb-2 gap-2 flex-wrap"><h4 class="font-bold text-xl">' + canal + '</h4>' + tipoLabel + descontoLabel + melhorPrecoBadge + '</div>';
+            html += '<p class="text-sm text-on-surface-variant mb-2">' + msg + '</p>' + codigoCupom;
+            html += '<div class="flex items-center justify-between mt-4">';
+            html += '<span class="text-2xl font-black text-on-background">' + preco + '</span>';
+            html += '<a href="' + link + '" target="_blank" class="text-primary font-bold text-sm flex items-center gap-1 hover:gap-2 transition-all" onclick="event.stopPropagation()">Ver Oferta <span class="material-symbols-outlined text-sm">open_in_new</span></a>';
+            html += '</div></div></div>';
+            return html;
+        }
 </body>
 
 </html>'''
