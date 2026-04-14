@@ -220,27 +220,26 @@ async def cmd_buscar_historico(client, config, dry_run=False, enviar_telegram=Fa
                 print(f"\n[CH] {canal}")
             
             canal_entity = await client.get_entity(canal)
+            canal_username = getattr(canal_entity, 'username', None)
+            canal_id = canal_entity.id if hasattr(canal_entity, 'id') else None
+            canal_nome = getattr(canal_entity, 'title', canal)
+            
+            if canal_username:
+                base_link = f"https://t.me/{canal_username}/"
+            elif canal_id:
+                base_link = f"https://t.me/c/{abs(canal_id)}/"
+            else:
+                base_link = "#"
             
             async for message in client.iter_messages(canal_entity, limit=50):
                 if message.message and texto_contem_interesse(message.message, config):
                     preco = extrair_preco(message.message)
                     
-                    canal_username = getattr(canal_entity, 'username', None)
-                    canal_id = canal_entity.id if hasattr(canal_entity, 'id') else None
-                    if canal_username:
-                        link = f"https://t.me/{canal_username}/{message.id}"
-                    elif canal_id:
-                        link = f"https://t.me/c/{abs(canal_id)}/{message.id}"
-                    else:
-                        link = "#"
-                    canal_nome = getattr(canal_entity, 'title', canal)
+                    link = f"{base_link}{message.id}" if base_link != "#" else "#"
                     
                     caminho_imagem = None
                     if message.photo:
-                        if canal_username:
-                            caminho_imagem = f"https://t.me/{canal_username}/{message.id}/{message.photo.id}"
-                        elif canal_id:
-                            caminho_imagem = f"https://t.me/c/{abs(canal_id)}/{message.id}/{message.photo.id}"
+                        caminho_imagem = await baixar_midia(message, pasta)
                     
                     oferta = {
                         'canal': canal_nome,
