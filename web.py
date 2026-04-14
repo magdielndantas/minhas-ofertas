@@ -1,19 +1,32 @@
 from datetime import datetime
 import os
-from flask import Flask, render_template_string, jsonify
+from flask import Flask, render_template_string, jsonify, send_from_directory
 from src.database import get_ofertas
 
 app = Flask(__name__)
 
 
+@app.route('/data/imagens/<filename>')
+def serve_image(filename):
+    img_dir = os.path.join(os.path.dirname(__file__), 'data', 'imagens')
+    return send_from_directory(img_dir, filename)
+
+
 def oferta_to_dict(oferta):
     """Converte oferta para dict com valores padrão"""
+    imagem = oferta.get('imagem')
+    if imagem:
+        if imagem.startswith('http'):
+            pass
+        else:
+            imagem = '/data/imagens/' + os.path.basename(imagem)
+    
     return {
         'canal': oferta.get('canal', 'N/A'),
         'preco': oferta.get('preco'),
         'link': oferta.get('link', '#'),
         'mensagem': oferta.get('mensagem', ''),
-        'imagem': oferta.get('imagem'),
+        'imagem': imagem,
         'data': oferta.get('data', ''),
         'created_at': oferta.get('created_at', '')
     }

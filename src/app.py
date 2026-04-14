@@ -141,16 +141,13 @@ class RateLimiter:
             self.message_count[minute_key] = self.message_count.get(minute_key, 0) + 1
 
 # ==================== DOWNLOAD IMAGENS ====================
-async def baixar_midia(message, pasta):
+async def get_midia_link(message, pasta):
     if message.photo:
         try:
-            Path(pasta).mkdir(exist_ok=True)
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"{pasta}/temp_{timestamp}.jpg"
-            await message.download_media(file=filename)
-            return filename
+            photo = message.photo
+            return f"https://t.me/{message.chat.username or message.chat.id}/{message.id}/{photo.id}"
         except Exception as e:
-            logger.warning(f"Erro ao baixar imagem: {e}")
+            logger.warning(f"Erro ao obter link da imagem: {e}")
             return None
     return None
 
@@ -231,13 +228,8 @@ async def cmd_buscar_historico(client, config, dry_run=False, enviar_telegram=Fa
                     
                     caminho_imagem = None
                     if message.photo:
-                        try:
-                            Path(pasta).mkdir(exist_ok=True)
-                            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                            caminho_imagem = f"{pasta}/{canal}_{message.id}_{timestamp}.jpg"
-                            await message.download_media(file=caminho_imagem)
-                        except Exception as e:
-                            logger.warning(f"Erro ao baixar imagem: {e}")
+                        canal_username = getattr(canal_entity, 'username', canal)
+                        caminho_imagem = f"https://t.me/{canal_username}/{message.id}"
                     
                     oferta = {
                         'canal': canal_nome,
@@ -462,11 +454,9 @@ def main():
                 print(c_green(f"[OK] Oferta em {canal_nome} - {preco_info}"))
                 
                 if not args.dry_run:
-                    caminho_imagem = await baixar_midia(event.message, pasta)
+                    caminho_imagem = await get_midia_link(event.message, pasta)
                     msg = f"[ALERT] OFERTA\n{canal_nome}\n{preco_info}\n{link}"
                     await enviar_notificacao(client, msg, caminho_imagem, canal_username, rate_limiter)
-                    if caminho_imagem and os.path.exists(caminho_imagem):
-                        os.remove(caminho_imagem)
             
             try:
                 await client.run_until_disconnected()
