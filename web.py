@@ -794,5 +794,163 @@ def api_buscar_historico_status():
         return jsonify({'status': 'error', 'message': str(e)}), 503
 
 
+@app.route('/api/auth/status')
+def api_auth_status():
+    try:
+        with urllib.request.urlopen(f'{MONITOR_URL}/auth/status', timeout=5) as resp:
+            return jsonify(json.loads(resp.read()))
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 503
+
+
+@app.route('/api/auth/phone', methods=['POST'])
+def api_auth_phone():
+    try:
+        data = json.dumps(request.get_json()).encode()
+        req = urllib.request.Request(f'{MONITOR_URL}/auth/phone', data=data,
+                                     headers={'Content-Type': 'application/json'}, method='POST')
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return jsonify(json.loads(resp.read())), resp.status
+    except urllib.error.HTTPError as e:
+        return jsonify(json.loads(e.read())), e.code
+    except Exception as e:
+        return jsonify({'error': str(e)}), 503
+
+
+@app.route('/api/auth/code', methods=['POST'])
+def api_auth_code():
+    try:
+        data = json.dumps(request.get_json()).encode()
+        req = urllib.request.Request(f'{MONITOR_URL}/auth/code', data=data,
+                                     headers={'Content-Type': 'application/json'}, method='POST')
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return jsonify(json.loads(resp.read())), resp.status
+    except urllib.error.HTTPError as e:
+        return jsonify(json.loads(e.read())), e.code
+    except Exception as e:
+        return jsonify({'error': str(e)}), 503
+
+
+AUTH_TEMPLATE = '''<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Autenticação Telegram — Minhas Ofertas</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen flex items-center justify-center">
+<div class="bg-white rounded-2xl shadow-lg p-8 w-full max-w-md">
+  <div class="text-center mb-8">
+    <div class="text-4xl mb-3">📱</div>
+    <h1 class="text-2xl font-bold text-gray-800">Autenticar no Telegram</h1>
+    <p class="text-gray-500 text-sm mt-1">Necessário apenas uma vez</p>
+  </div>
+
+  <div id="step-phone">
+    <p class="text-sm text-gray-600 mb-4">Digite seu número com DDD e código do país (ex: +5511999999999):</p>
+    <input id="phone" type="tel" placeholder="+5511999999999"
+      class="w-full border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"/>
+    <button onclick="sendPhone()"
+      class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition">
+      Enviar código
+    </button>
+  </div>
+
+  <div id="step-code" class="hidden">
+    <p class="text-sm text-gray-600 mb-4">Digite o código recebido no Telegram:</p>
+    <input id="code" type="text" placeholder="12345"
+      class="w-full border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3"/>
+    <div id="step-2fa" class="hidden mb-3">
+      <p class="text-sm text-gray-600 mb-2">Senha de verificação em dois fatores:</p>
+      <input id="password" type="password" placeholder="Senha 2FA"
+        class="w-full border border-gray-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+    </div>
+    <button onclick="sendCode()"
+      class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-lg transition">
+      Verificar
+    </button>
+  </div>
+
+  <div id="step-done" class="hidden text-center">
+    <div class="text-5xl mb-4">✅</div>
+    <h2 class="text-xl font-bold text-gray-800 mb-2">Autenticado!</h2>
+    <p class="text-gray-500 text-sm mb-6">O monitor está ativo e monitorando os canais.</p>
+    <a href="/" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition">
+      Ver ofertas
+    </a>
+  </div>
+
+  <div id="error" class="hidden mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm"></div>
+</div>
+
+<script>
+function showError(msg) {
+  const el = document.getElementById('error');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+
+function hideError() {
+  document.getElementById('error').classList.add('hidden');
+}
+
+async function sendPhone() {
+  hideError();
+  const phone = document.getElementById('phone').value.trim();
+  if (!phone) return showError('Digite o número de telefone.');
+  const res = await fetch('/api/auth/phone', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({phone})
+  });
+  const data = await res.json();
+  if (res.ok) {
+    document.getElementById('step-phone').classList.add('hidden');
+    document.getElementById('step-code').classList.remove('hidden');
+  } else {
+    showError(data.error || 'Erro ao enviar código.');
+  }
+}
+
+async function sendCode() {
+  hideError();
+  const code = document.getElementById('code').value.trim();
+  const password = document.getElementById('password').value.trim();
+  if (!code) return showError('Digite o código.');
+  const res = await fetch('/api/auth/code', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({code, password})
+  });
+  const data = await res.json();
+  if (res.ok && data.status === 'authenticated') {
+    document.getElementById('step-code').classList.add('hidden');
+    document.getElementById('step-done').classList.remove('hidden');
+  } else if (data.status === '2fa_required') {
+    document.getElementById('step-2fa').classList.remove('hidden');
+    showError('Conta com verificação em dois fatores. Digite sua senha abaixo.');
+  } else {
+    showError(data.error || 'Código inválido.');
+  }
+}
+
+// Verificar status ao carregar
+fetch('/api/auth/status').then(r => r.json()).then(data => {
+  if (data.status === 'authenticated') {
+    document.getElementById('step-phone').classList.add('hidden');
+    document.getElementById('step-done').classList.remove('hidden');
+  }
+});
+</script>
+</body>
+</html>'''
+
+
+@app.route('/auth')
+def auth_page():
+    return render_template_string(AUTH_TEMPLATE)
+
+
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=5030)

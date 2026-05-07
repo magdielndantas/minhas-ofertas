@@ -17,7 +17,7 @@ load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent))
 
 from telethon import TelegramClient, events
-from telethon.errors import FloodWaitError
+from telethon.errors import FloodWaitError, SessionPasswordNeededError
 import asyncio
 
 try:
@@ -48,51 +48,126 @@ _history_running = False
 _history_last_run = None
 _history_result = None
 
+_auth_state = {
+    'status': 'unauthenticated',  # unauthenticated | code_sent | authenticated
+    'phone': None,
+    'phone_code_hash': None,
+    'error': None
+}
+_auth_client = None
+
 class TriggerHandler(BaseHTTPRequestHandler):
+    def _json_response(self, code, data):
+        body = json.dumps(data).encode()
+        self.send_response(code)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _read_body(self):
+        length = int(self.headers.get('Content-Length', 0))
+        return json.loads(self.rfile.read(length)) if length else {}
+
     def do_GET(self):
         if self.path == '/status':
-            body = json.dumps({
+            self._json_response(200, {
                 'running': _history_running,
                 'last_run': _history_last_run,
                 'result': _history_result
-            }).encode()
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(body)
+            })
+        elif self.path == '/auth/status':
+            self._json_response(200, {
+                'status': _auth_state['status'],
+                'error': _auth_state['error']
+            })
         else:
             self.send_response(404)
             self.end_headers()
 
     def do_POST(self):
-        global _history_running
+        global _history_running, _auth_state
         if self.path == '/buscar-historico':
             if _history_running:
-                body = json.dumps({'status': 'running'}).encode()
-                self.send_response(409)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(body)
+                self._json_response(409, {'status': 'running'})
                 return
             if _event_loop:
                 asyncio.run_coroutine_threadsafe(_trigger_history(), _event_loop)
-                body = json.dumps({'status': 'started'}).encode()
-                self.send_response(202)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(body)
+                self._json_response(202, {'status': 'started'})
             else:
-                body = json.dumps({'status': 'error', 'message': 'Loop não iniciado'}).encode()
-                self.send_response(503)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(body)
+                self._json_response(503, {'status': 'error', 'message': 'Loop não iniciado'})
+        elif self.path == '/auth/phone':
+            data = self._read_body()
+            phone = data.get('phone', '').strip()
+            if not phone:
+                self._json_response(400, {'error': 'Telefone obrigatório'})
+                return
+            if _event_loop and _auth_client:
+                future = asyncio.run_coroutine_threadsafe(_send_code(phone), _event_loop)
+                try:
+                    future.result(timeout=15)
+                    self._json_response(200, {'status': 'code_sent'})
+                except Exception as e:
+                    self._json_response(500, {'error': str(e)})
+            else:
+                self._json_response(503, {'error': 'Cliente não iniciado'})
+        elif self.path == '/auth/code':
+            data = self._read_body()
+            code = data.get('code', '').strip()
+            password = data.get('password', '').strip()
+            if not code:
+                self._json_response(400, {'error': 'Código obrigatório'})
+                return
+            if _event_loop and _auth_client:
+                future = asyncio.run_coroutine_threadsafe(_verify_code(code, password), _event_loop)
+                try:
+                    result = future.result(timeout=15)
+                    self._json_response(200, result)
+                except Exception as e:
+                    self._json_response(500, {'error': str(e)})
+            else:
+                self._json_response(503, {'error': 'Cliente não iniciado'})
         else:
             self.send_response(404)
             self.end_headers()
 
     def log_message(self, format, *args):
         pass
+
+
+async def _send_code(phone):
+    global _auth_state
+    try:
+        sent = await _auth_client.send_code_request(phone)
+        _auth_state['phone'] = phone
+        _auth_state['phone_code_hash'] = sent.phone_code_hash
+        _auth_state['status'] = 'code_sent'
+        _auth_state['error'] = None
+    except Exception as e:
+        _auth_state['error'] = str(e)
+        raise
+
+
+async def _verify_code(code, password=''):
+    global _auth_state
+    try:
+        await _auth_client.sign_in(
+            _auth_state['phone'],
+            code,
+            phone_code_hash=_auth_state['phone_code_hash']
+        )
+        _auth_state['status'] = 'authenticated'
+        _auth_state['error'] = None
+        return {'status': 'authenticated'}
+    except SessionPasswordNeededError:
+        if password:
+            await _auth_client.sign_in(password=password)
+            _auth_state['status'] = 'authenticated'
+            _auth_state['error'] = None
+            return {'status': 'authenticated'}
+        return {'status': '2fa_required'}
+    except Exception as e:
+        _auth_state['error'] = str(e)
+        raise
 
 def start_trigger_server():
     server = HTTPServer(('0.0.0.0', 8000), TriggerHandler)
@@ -519,16 +594,26 @@ def main():
     # Telegram
     API_ID, API_HASH = get_env_credentials()
     client = TelegramClient('data/monitor_ofertas', API_ID, API_HASH)
-    
+
     async def run_app():
-        global _event_loop, _trigger_client
+        global _event_loop, _trigger_client, _auth_client, _auth_state
         _event_loop = asyncio.get_event_loop()
         _trigger_client = client
+        _auth_client = client
 
         trigger_thread = threading.Thread(target=start_trigger_server, daemon=True)
         trigger_thread.start()
 
-        await client.start()
+        await client.connect()
+
+        if not await client.is_user_authorized():
+            print(c_yellow("[*] Autenticação necessária. Acesse /auth no frontend."))
+            _auth_state['status'] = 'unauthenticated'
+            while _auth_state['status'] != 'authenticated':
+                await asyncio.sleep(1)
+            print(c_green("[OK] Autenticado com sucesso!"))
+        else:
+            _auth_state['status'] = 'authenticated'
 
         if args.history:
             await cmd_buscar_historico(client, config, args.dry_run, args.telegram)
