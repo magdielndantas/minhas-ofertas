@@ -6,7 +6,9 @@ services:
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
-    env_file: .env
+    environment:
+      - TELEGRAM_API_ID=${TELEGRAM_API_ID}
+      - TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
     restart: unless-stopped
     stdin_open: true
     tty: true
@@ -19,7 +21,9 @@ services:
     command: python web.py
     volumes:
       - ./data:/app/data
-    env_file: .env
+    environment:
+      - TELEGRAM_API_ID=${TELEGRAM_API_ID}
+      - TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
     ports:
       - "3020:5030"
     restart: unless-stopped
