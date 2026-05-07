@@ -1,5 +1,8 @@
 from datetime import datetime
 import os
+import json
+import urllib.request
+import urllib.error
 from flask import Flask, render_template_string, jsonify, send_from_directory, request
 from src.database import get_ofertas, get_canais, get_ofertas_similares, get_todas_ofertas_com_produto, get_ofertas_por_palavras
 
@@ -147,6 +150,11 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             -ms-overflow-style: none;
             scrollbar-width: none;
         }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
     </style>
 </head>
 
@@ -263,9 +271,16 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
 
             <!-- Ofertas Grid -->
             <section class="space-y-6">
-                <div class="flex justify-between items-end">
+                <div class="flex justify-between items-end flex-wrap gap-3">
                     <h2 class="text-3xl font-black tracking-tight text-on-background">Resultados</h2>
-                    <span id="result-count" class="text-sm font-bold text-primary">0 Oferta(s)</span>
+                    <div class="flex items-center gap-3">
+                        <span id="result-count" class="text-sm font-bold text-primary">0 Oferta(s)</span>
+                        <button id="btn-historico" onclick="buscarHistorico()"
+                            class="flex items-center gap-2 px-4 py-2 bg-surface-container rounded-lg text-sm font-bold text-on-surface hover:bg-surface-container-high transition">
+                            <span id="btn-historico-icon" class="material-symbols-outlined text-base">history</span>
+                            <span id="btn-historico-label">Buscar Histórico</span>
+                        </button>
+                    </div>
                 </div>
                 <div id="ofertas-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 </div>
@@ -378,11 +393,16 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                     document.getElementById('ultima-atualizacao').textContent = new Date().toLocaleString('pt-BR');
                     document.getElementById('result-count').textContent = allOfertas.length + ' Oferta(s)';
                     
+                    var newItems = reset ? allOfertas : ofertas;
                     var html = '';
-                    for (var j = 0; j < allOfertas.length; j++) {
-                        html += renderOferta(allOfertas[j], false);
+                    for (var j = 0; j < newItems.length; j++) {
+                        html += renderOferta(newItems[j], false);
                     }
-                    grid.innerHTML = html;
+                    if (reset) {
+                        grid.innerHTML = html;
+                    } else {
+                        grid.innerHTML += html;
+                    }
                 })
                 .catch(function(err) {
                     console.error(err);
@@ -412,16 +432,16 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
 
         function renderOferta(oferta, isLowestPrice) {
             if (isLowestPrice === undefined) isLowestPrice = false;
-            var preco = oferta.preco ? 'R$ ' + Number(oferta.preco).toLocaleString('pt-BR', {minimumFractionDigits: 2}) : 'Grátis';
+            var preco = (oferta.preco !== null && oferta.preco !== undefined) ? 'R$ ' + Number(oferta.preco).toLocaleString('pt-BR', {minimumFractionDigits: 2}) : 'Grátis';
             var tipoLabel = oferta.tipo === 'cupom' ? '<span class="text-xs bg-tertiary-container text-on-tertiary-container px-2 py-1 rounded font-bold">CUPOM</span>' : '';
             var descontoLabel = oferta.desconto ? '<span class="text-xs bg-green-600 text-white px-2 py-1 rounded font-bold">' + oferta.desconto + '% OFF</span>' : '';
             var melhorPrecoBadge = isLowestPrice ? '<span class="text-xs bg-blue-600 text-white px-2 py-1 rounded font-bold">MELHOR PREÇO</span>' : '';
             var imgSrc = oferta.imagem ? oferta.imagem : '';
-            var imgHtml = imgSrc ? '<img class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" src="' + imgSrc + '" />' : '<span class="material-symbols-outlined text-[#834c4c] text-4xl">shopping_cart</span>';
-            var msg = oferta.mensagem || '';
+            var imgHtml = imgSrc ? '<img class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" src="' + imgSrc + '" onerror="imgError(this)" />' : '<span class="material-symbols-outlined text-[#834c4c] text-4xl">shopping_cart</span>';
+            var msg = escapeHtml(oferta.mensagem || '');
             if (msg.length > 150) msg = msg.substring(0, 150) + '...';
-            var codigoCupom = oferta.codigo ? '<div class="text-sm font-bold text-primary mt-2">Código: ' + String(oferta.codigo).replace(/</g, '&lt;') + '</div>' : '';
-            var canal = oferta.canal || 'N/A';
+            var codigoCupom = oferta.codigo ? '<div class="text-sm font-bold text-primary mt-2">Código: ' + escapeHtml(String(oferta.codigo)) + '</div>' : '';
+            var canal = escapeHtml(oferta.canal || 'N/A');
             var link = oferta.link || '#';
 
             var html = '<div class="bg-surface-container-low rounded-lg p-1 overflow-hidden group cursor-pointer hover:ring-2 hover:ring-primary transition" onclick="openModal(' + oferta.id + ')">';
@@ -440,20 +460,20 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             var oferta = allOfertas.find(function(o) { return o.id === id; });
             if (!oferta) return;
             
-            var preco = oferta.preco ? 'R$ ' + Number(oferta.preco).toLocaleString('pt-BR', {minimumFractionDigits: 2}) : 'Sem preco';
+            var preco = (oferta.preco !== null && oferta.preco !== undefined) ? 'R$ ' + Number(oferta.preco).toLocaleString('pt-BR', {minimumFractionDigits: 2}) : 'Grátis';
             var tipoLabel = oferta.tipo === 'cupom' ? '<span class="bg-tertiary-container text-on-tertiary-container px-3 py-1 rounded font-bold">CUPOM</span>' : '';
             var descontoLabel = oferta.desconto ? '<span class="bg-green-600 text-white px-3 py-1 rounded font-bold">' + oferta.desconto + '% OFF</span>' : '';
-            
-            var imgHtml = oferta.imagem ? '<img class="w-full max-h-64 object-contain rounded-lg mb-4" src="' + oferta.imagem + '" />' : '<div class="w-full h-48 bg-surface-container flex items-center justify-center rounded-lg mb-4"><span class="material-symbols-outlined text-6xl text-[#834c4c]">shopping_cart</span></div>';
-            
+
+            var imgHtml = oferta.imagem ? '<img class="w-full max-h-64 object-contain rounded-lg mb-4" src="' + oferta.imagem + '" onerror="imgError(this)" />' : '<div class="w-full h-48 bg-surface-container flex items-center justify-center rounded-lg mb-4"><span class="material-symbols-outlined text-6xl text-[#834c4c]">shopping_cart</span></div>';
+
             var codigoHtml = '';
             if (oferta.codigo) {
-                var btnOnclick = 'copiarCodigo(this, ' + JSON.stringify(String(oferta.codigo).replace(/</g, '&lt;')) + ')';
-                codigoHtml = '<div class="text-lg font-bold text-primary mb-4">Código: ' + String(oferta.codigo).replace(/</g, '&lt;') + ' <button class="text-sm font-normal ml-2 underline" onclick="' + btnOnclick + '">Copiar</button></div>';
+                var codigoEscaped = escapeHtml(String(oferta.codigo));
+                codigoHtml = '<div class="text-lg font-bold text-primary mb-4">Código: ' + codigoEscaped + ' <button class="text-sm font-normal ml-2 underline" data-codigo="' + codigoEscaped + '" onclick="copiarCodigo(this)">Copiar</button></div>';
             }
-            
-            var canal = oferta.canal || 'N/A';
-            var mensagem = oferta.mensagem || '';
+
+            var canal = escapeHtml(oferta.canal || 'N/A');
+            var mensagem = escapeHtml(oferta.mensagem || '');
             var link = oferta.link || '#';
             var data = oferta.data || '';
             
@@ -528,9 +548,23 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             }
         }
 
-        function copiarCodigo(btn, codigo) {
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function imgError(img) {
+            img.parentElement.innerHTML = '<span class="material-symbols-outlined text-[#834c4c] text-4xl">shopping_cart</span>';
+        }
+
+        function copiarCodigo(btn) {
+            var codigo = btn.getAttribute('data-codigo');
             navigator.clipboard.writeText(codigo);
             btn.textContent = 'Copiado!';
+            setTimeout(function() { btn.textContent = 'Copiar'; }, 2000);
         }
 
         document.addEventListener('keydown', function(e) {
@@ -581,6 +615,65 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 tipoSelect.value = 'oferta';
             }
             loadOfertas(true);
+        }
+
+        function buscarHistorico() {
+            var btn = document.getElementById('btn-historico');
+            var icon = document.getElementById('btn-historico-icon');
+            var label = document.getElementById('btn-historico-label');
+            btn.disabled = true;
+            icon.style.animation = 'spin 1s linear infinite';
+            icon.textContent = 'sync';
+            label.textContent = 'Buscando...';
+
+            fetch('/api/buscar-historico', { method: 'POST' })
+                .then(function(res) { return res.json().then(function(d) { return { ok: res.ok, status: res.status, data: d }; }); })
+                .then(function(r) {
+                    if (r.status === 409) {
+                        label.textContent = 'Já em execução';
+                    } else if (r.ok) {
+                        label.textContent = 'Iniciado!';
+                        pollHistoricoStatus();
+                    } else {
+                        label.textContent = 'Erro: ' + (r.data.message || r.status);
+                        setTimeout(resetBtnHistorico, 3000);
+                    }
+                })
+                .catch(function(e) {
+                    label.textContent = 'Erro de conexão';
+                    setTimeout(resetBtnHistorico, 3000);
+                });
+        }
+
+        function resetBtnHistorico() {
+            var btn = document.getElementById('btn-historico');
+            var icon = document.getElementById('btn-historico-icon');
+            var label = document.getElementById('btn-historico-label');
+            btn.disabled = false;
+            icon.style.animation = '';
+            icon.textContent = 'history';
+            label.textContent = 'Buscar Histórico';
+        }
+
+        function pollHistoricoStatus() {
+            var interval = setInterval(function() {
+                fetch('/api/buscar-historico/status')
+                    .then(function(res) { return res.json(); })
+                    .then(function(d) {
+                        if (!d.running) {
+                            clearInterval(interval);
+                            var label = document.getElementById('btn-historico-label');
+                            if (d.result === 'ok') {
+                                label.textContent = 'Concluído!';
+                                loadOfertas(true);
+                            } else {
+                                label.textContent = d.result || 'Concluído';
+                            }
+                            setTimeout(resetBtnHistorico, 3000);
+                        }
+                    })
+                    .catch(function() { clearInterval(interval); resetBtnHistorico(); });
+            }, 3000);
         }
 
         loadCanais();
@@ -677,5 +770,29 @@ def api_ofertas_relacionados(oferta_id):
     return jsonify([oferta_to_dict(o) for o in relacionados])
 
 
+MONITOR_URL = 'http://monitor:8000'
+
+
+@app.route('/api/buscar-historico', methods=['POST'])
+def api_buscar_historico():
+    try:
+        req = urllib.request.Request(f'{MONITOR_URL}/buscar-historico', method='POST', data=b'')
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return jsonify(json.loads(resp.read())), resp.status
+    except urllib.error.HTTPError as e:
+        return jsonify(json.loads(e.read())), e.code
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 503
+
+
+@app.route('/api/buscar-historico/status')
+def api_buscar_historico_status():
+    try:
+        with urllib.request.urlopen(f'{MONITOR_URL}/status', timeout=5) as resp:
+            return jsonify(json.loads(resp.read()))
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 503
+
+
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5030)
+    app.run(debug=False, host='0.0.0.0', port=5030)

@@ -1,0 +1,27 @@
+services:
+  monitor:
+    build: .
+    container_name: minhas-ofertas-monitor
+    command: python -m src.app
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    env_file: .env
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    expose:
+      - "8000"
+
+  web:
+    build: .
+    container_name: minhas-ofertas-web
+    command: python web.py
+    volumes:
+      - ./data:/app/data
+    env_file: .env
+    ports:
+      - "3020:5030"
+    restart: unless-stopped
+    depends_on:
+      - monitor

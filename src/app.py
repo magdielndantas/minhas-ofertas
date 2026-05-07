@@ -5,6 +5,8 @@ import sys
 import logging
 import argparse
 import sqlite3
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
@@ -39,6 +41,62 @@ except ImportError:
 from database import init_db, save_oferta, get_ofertas, get_estatisticas
 from config import carregar_config, salvar_config, CONFIG_DEFAULT
 from price_parser import extrair_preco, texto_contem_interesse, texto_contem_cupom, extrair_codigo_cupom, extrair_desconto, extrair_nome_produto
+
+# ==================== TRIGGER SERVER ====================
+_event_loop = None
+_history_running = False
+_history_last_run = None
+_history_result = None
+
+class TriggerHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/status':
+            body = json.dumps({
+                'running': _history_running,
+                'last_run': _history_last_run,
+                'result': _history_result
+            }).encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def do_POST(self):
+        global _history_running
+        if self.path == '/buscar-historico':
+            if _history_running:
+                body = json.dumps({'status': 'running'}).encode()
+                self.send_response(409)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if _event_loop:
+                asyncio.run_coroutine_threadsafe(_trigger_history(), _event_loop)
+                body = json.dumps({'status': 'started'}).encode()
+                self.send_response(202)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(body)
+            else:
+                body = json.dumps({'status': 'error', 'message': 'Loop não iniciado'}).encode()
+                self.send_response(503)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, format, *args):
+        pass
+
+def start_trigger_server():
+    server = HTTPServer(('0.0.0.0', 8000), TriggerHandler)
+    server.serve_forever()
 
 # Cores para Windows
 if sys.platform == 'win32':
@@ -145,8 +203,7 @@ async def baixar_midia(message, pasta):
     if message.photo:
         try:
             Path(pasta).mkdir(exist_ok=True)
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"{pasta}/temp_{timestamp}.jpg"
+            filename = f"{pasta}/msg_{message.id}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.jpg"
             await message.download_media(file=filename)
             return filename
         except Exception as e:
@@ -208,6 +265,23 @@ def cmd_testar_regex(texto_teste):
     precos = re.findall(r'R\$\s*[\d.,]+', texto_teste)
     if precos:
         print(c_yellow(f"[*] Matches encontrados: {precos}"))
+
+async def _trigger_history():
+    global _history_running, _history_last_run, _history_result
+    _history_running = True
+    try:
+        config = carregar_config()
+        await cmd_buscar_historico(_trigger_client, config)
+        _history_result = 'ok'
+    except Exception as e:
+        _history_result = f'erro: {e}'
+        if logger:
+            logger.error(f'Erro no histórico via trigger: {e}')
+    finally:
+        _history_running = False
+        _history_last_run = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
+
+_trigger_client = None
 
 async def cmd_buscar_historico(client, config, dry_run=False, enviar_telegram=False):
     print(c_cyan("\n[*] Buscando historico..."))
@@ -444,11 +518,18 @@ def main():
     
     # Telegram
     API_ID, API_HASH = get_env_credentials()
-    client = TelegramClient('monitor_ofertas', API_ID, API_HASH)
+    client = TelegramClient('data/monitor_ofertas', API_ID, API_HASH)
     
     async def run_app():
+        global _event_loop, _trigger_client
+        _event_loop = asyncio.get_event_loop()
+        _trigger_client = client
+
+        trigger_thread = threading.Thread(target=start_trigger_server, daemon=True)
+        trigger_thread.start()
+
         await client.start()
-        
+
         if args.history:
             await cmd_buscar_historico(client, config, args.dry_run, args.telegram)
         else:
