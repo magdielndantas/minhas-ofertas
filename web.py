@@ -331,6 +331,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
         var loadingMore = false;
         var hasMore = true;
         var autoRefreshInterval;
+        var currentTab = 'ofertas';
 
         function loadCanais() {
             fetch('/api/canais')
@@ -620,9 +621,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                 switchTab('ofertas');
             }
         });
-
-        var currentTab = 'ofertas';
-
+        
         function switchTab(tab) {
             currentTab = tab;
             document.getElementById('tab-ofertas').className = tab === 'ofertas' ? 'px-6 py-3 font-bold text-primary border-b-2 border-primary' : 'px-6 py-3 font-bold text-on-surface-variant hover:text-on-surface';
