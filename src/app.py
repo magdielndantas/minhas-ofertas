@@ -19,6 +19,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 from telethon import TelegramClient, events
 from telethon.errors import FloodWaitError, SessionPasswordNeededError
 import asyncio
+import sched
+import time as time_module
 
 try:
     from tqdm import tqdm
@@ -41,6 +43,7 @@ except ImportError:
 from database import init_db, save_oferta, get_ofertas, get_estatisticas
 from config import carregar_config, salvar_config, CONFIG_DEFAULT
 from price_parser import extrair_preco, texto_contem_interesse, texto_contem_cupom, extrair_codigo_cupom, extrair_desconto, extrair_nome_produto
+from olx_monitor import run_olx_monitor
 
 # ==================== TRIGGER SERVER ====================
 _event_loop = None
@@ -79,6 +82,11 @@ class TriggerHandler(BaseHTTPRequestHandler):
             self._json_response(200, {
                 'status': _auth_state['status'],
                 'error': _auth_state['error']
+            })
+        elif self.path == '/olx/status':
+            self._json_response(200, {
+                'last_run': _olx_last_run,
+                'scheduler': _olx_scheduler is not None
             })
         else:
             self.send_response(404)
@@ -122,6 +130,16 @@ class TriggerHandler(BaseHTTPRequestHandler):
                 try:
                     result = future.result(timeout=15)
                     self._json_response(200, result)
+                except Exception as e:
+                    self._json_response(500, {'error': str(e)})
+            else:
+                self._json_response(503, {'error': 'Cliente não iniciado'})
+        elif self.path == '/olx/run':
+            if _event_loop and _trigger_client:
+                config = carregar_config()
+                try:
+                    run_olx_scheduled(_trigger_client, config)
+                    self._json_response(200, {'status': 'completed', 'last_run': _olx_last_run})
                 except Exception as e:
                     self._json_response(500, {'error': str(e)})
             else:
@@ -314,6 +332,104 @@ async def enviar_notificacao(client, mensagem, caminho_imagem, canal_id, rate_li
             await client.send_message('me', msg_final)
     except Exception as e:
         logger.error(f"Erro ao enviar: {e}")
+
+async def enviar_notificacao_olx(client, oferta, rate_limiter):
+    await rate_limiter.wait_if_needed('olx')
+    
+    title = oferta.get('produto', 'Sem título')
+    price = oferta.get('preco')
+    url = oferta.get('link', '')
+    price_text = f"R$ {price:.2f}" if price else "Preço não informado"
+    
+    linhas = [
+        f"[ALERT] OFERTA OLX",
+        f"📦 {title[:50]}",
+        f"💰 {price_text}",
+        f"🔗 {url}"
+    ]
+    msg = "\n".join(linhas)
+    
+    try:
+        await client.send_message('me', msg)
+        logger.info(f"OLX: Notificação enviada para {title[:30]}")
+    except FloodWaitError as e:
+        logger.warning(f"Flood OLX. Aguardando {e.seconds}s...")
+        await asyncio.sleep(e.seconds)
+        await client.send_message('me', msg)
+    except Exception as e:
+        logger.error(f"Erro OLX ao notificar: {e}")
+
+# ==================== OLX SCHEDULER ====================
+_olx_scheduler = None
+_olx_last_run = None
+
+def run_olx_scheduled(client, config):
+    global _olx_last_run
+    
+    logger.info("[OLX] Iniciando verificação scheduled...")
+    print(c_cyan("[OLX] Verificando novas ofertas..."))
+    
+    offers = run_olx_monitor(config, save_oferta)
+    
+    if offers:
+        rate_limiter = RateLimiter(
+            config.get('rate_limit', {}).get('max_por_minuto', 20),
+            config.get('rate_limit', {}).get('delay_segundos', 2)
+        )
+        
+        async def notify_offers():
+            for offer in offers:
+                await enviar_notificacao_olx(client, offer, rate_limiter)
+        
+        try:
+            asyncio.run(notify_offers())
+        except Exception as e:
+            logger.error(f"Erro ao enviar notificações OLX: {e}")
+        
+        print(c_green(f"[OLX] {len(offers)} novas ofertas encontradas e notificadas"))
+    else:
+        print(c_yellow("[OLX] Nenhuma nova oferta encontrada"))
+    
+    _olx_last_run = datetime.now().strftime('%d/%m/%Y %H:%M')
+    logger.info(f"[OLX] Última execução: {_olx_last_run}")
+
+def start_olx_scheduler(client, config):
+    def schedule_check():
+        if _event_loop and _trigger_client:
+            try:
+                run_olx_scheduled(_trigger_client, config)
+            except Exception as e:
+                logger.error(f"Erro no scheduler OLX: {e}")
+        
+        schedule_next()
+
+    def schedule_next():
+        now = datetime.now()
+        target_hours = [9, 21]
+        next_hour = None
+        
+        for h in target_hours:
+            if now.hour < h:
+                next_hour = h
+                break
+        
+        if next_hour is None:
+            next_hour = target_hours[0]
+        
+        next_run = now.replace(hour=next_hour, minute=0, second=0, microsecond=0)
+        if now >= next_run:
+            next_run = next_run.replace(day=now.day + 1)
+        
+        delay = (next_run - now).total_seconds()
+        logger.info(f"[OLX] Próxima verificação em {delay/3600:.1f}h")
+        _olx_scheduler.enter(delay, 1, schedule_check)
+    
+    _olx_scheduler = sched.scheduler(time_module.time, time_module.sleep)
+    _olx_scheduler.enter(60, 1, schedule_check)
+    
+    scheduler_thread = threading.Thread(target=_olx_scheduler.run, daemon=True)
+    scheduler_thread.start()
+    logger.info("[OLX] Scheduler iniciado (manhã 9h, noite 21h)")
 
 # ==================== COMANDOS ====================
 def cmd_listar_canais(config):
@@ -614,6 +730,8 @@ def main():
             print(c_green("[OK] Autenticado com sucesso!"))
         else:
             _auth_state['status'] = 'authenticated'
+
+        start_olx_scheduler(client, config)
 
         if args.history:
             await cmd_buscar_historico(client, config, args.dry_run, args.telegram)
