@@ -236,6 +236,7 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             <div class="flex border-b border-outline">
                 <button id="tab-ofertas" class="px-6 py-3 font-bold text-primary border-b-2 border-primary" onclick="switchTab('ofertas')">Ofertas</button>
                 <button id="tab-cupons" class="px-6 py-3 font-bold text-on-surface-variant hover:text-on-surface" onclick="switchTab('cupons')">Cupons</button>
+                <button id="tab-olx" class="px-6 py-3 font-bold text-on-surface-variant hover:text-on-surface" onclick="switchTab('olx')">OLX</button>
             </div>
 
             <!-- Stats -->
@@ -279,6 +280,11 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                             class="flex items-center gap-2 px-4 py-2 bg-surface-container rounded-lg text-sm font-bold text-on-surface hover:bg-surface-container-high transition">
                             <span id="btn-historico-icon" class="material-symbols-outlined text-base">history</span>
                             <span id="btn-historico-label">Buscar Histórico</span>
+                        </button>
+                        <button id="btn-olx" onclick="runOlxScan()"
+                            class="flex items-center gap-2 px-4 py-2 bg-tertiary-container rounded-lg text-sm font-bold text-on-tertiary-container hover:bg-tertiary-container/70 transition">
+                            <span id="btn-olx-icon" class="material-symbols-outlined text-base">search</span>
+                            <span id="btn-olx-label">Scan OLX</span>
                         </button>
                     </div>
                 </div>
@@ -362,7 +368,21 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             
             loadingMore = true;
             
-            var params = buildParams() + '&offset=' + offset + '&limit=' + limit;
+            var params = buildParams();
+            
+            if (currentTab === 'olx') {
+                params = new URLSearchParams();
+                params.append('tipo', 'oferta');
+                params.append('canal', 'OLX%');
+                params.append('ordenar', 'created_at');
+                params.append('ordem', 'desc');
+            } else {
+                var originalParams = buildParams();
+                params = new URLSearchParams(originalParams);
+            }
+            
+            params.append('offset', offset);
+            params.append('limit', limit);
             console.log('Fetching URL:', API_URL + '?' + params);
             fetch(API_URL + '?' + params)
                 .then(function(response) { console.log('Response:', response.status); return response.json(); })
@@ -607,12 +627,18 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
             currentTab = tab;
             document.getElementById('tab-ofertas').className = tab === 'ofertas' ? 'px-6 py-3 font-bold text-primary border-b-2 border-primary' : 'px-6 py-3 font-bold text-on-surface-variant hover:text-on-surface';
             document.getElementById('tab-cupons').className = tab === 'cupons' ? 'px-6 py-3 font-bold text-primary border-b-2 border-primary' : 'px-6 py-3 font-bold text-on-surface-variant hover:text-on-surface';
+            document.getElementById('tab-olx').className = tab === 'olx' ? 'px-6 py-3 font-bold text-primary border-b-2 border-primary' : 'px-6 py-3 font-bold text-on-surface-variant hover:text-on-surface';
 
             var tipoSelect = document.getElementById('tipo');
             if (tab === 'cupons') {
                 tipoSelect.value = 'cupom';
+                document.getElementById('filtros-canal').style.display = 'block';
+            } else if (tab === 'olx') {
+                tipoSelect.value = 'oferta';
+                document.getElementById('filtros-canal').style.display = 'none';
             } else {
                 tipoSelect.value = 'oferta';
+                document.getElementById('filtros-canal').style.display = 'block';
             }
             loadOfertas(true);
         }
@@ -674,6 +700,44 @@ HTML_TEMPLATE = '''<!DOCTYPE html>
                     })
                     .catch(function() { clearInterval(interval); resetBtnHistorico(); });
             }, 3000);
+        }
+
+        function runOlxScan() {
+            var btn = document.getElementById('btn-olx');
+            var icon = document.getElementById('btn-olx-icon');
+            var label = document.getElementById('btn-olx-label');
+            btn.disabled = true;
+            icon.style.animation = 'spin 1s linear infinite';
+            icon.textContent = 'sync';
+            label.textContent = 'Scanning...';
+
+            fetch('/api/olx/run', { method: 'POST' })
+                .then(function(res) { return res.json().then(function(d) { return { ok: res.ok, status: res.status, data: d }; }); })
+                .then(function(r) {
+                    if (r.ok) {
+                        label.textContent = 'Concluído!';
+                        if (currentTab === 'olx') {
+                            loadOfertas(true);
+                        }
+                    } else {
+                        label.textContent = 'Erro: ' + (r.data.error || r.status);
+                    }
+                    setTimeout(resetBtnOlx, 3000);
+                })
+                .catch(function(e) {
+                    label.textContent = 'Erro de conexão';
+                    setTimeout(resetBtnOlx, 3000);
+                });
+        }
+
+        function resetBtnOlx() {
+            var btn = document.getElementById('btn-olx');
+            var icon = document.getElementById('btn-olx-icon');
+            var label = document.getElementById('btn-olx-label');
+            btn.disabled = false;
+            icon.style.animation = '';
+            icon.textContent = 'search';
+            label.textContent = 'Scan OLX';
         }
 
         loadCanais();
@@ -790,6 +854,27 @@ def api_buscar_historico_status():
     try:
         with urllib.request.urlopen(f'{MONITOR_URL}/status', timeout=5) as resp:
             return jsonify(json.loads(resp.read()))
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 503
+
+
+@app.route('/api/olx/status')
+def api_olx_status():
+    try:
+        with urllib.request.urlopen(f'{MONITOR_URL}/olx/status', timeout=5) as resp:
+            return jsonify(json.loads(resp.read()))
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 503
+
+
+@app.route('/api/olx/run', methods=['POST'])
+def api_olx_run():
+    try:
+        data = json.dumps({}).encode()
+        req = urllib.request.Request(f'{MONITOR_URL}/olx/run', data=data,
+                                    headers={'Content-Type': 'application/json'}, method='POST')
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            return jsonify(json.loads(resp.read())), resp.status
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 503
 
