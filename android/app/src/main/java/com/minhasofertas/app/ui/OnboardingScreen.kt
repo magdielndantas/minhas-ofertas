@@ -1,18 +1,25 @@
 package com.minhasofertas.app.ui
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.VpnKey
@@ -22,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -38,8 +46,10 @@ fun OnboardingScreen(
     onSendCode: (String) -> Unit,
     onSendPassword: (String) -> Unit
 ) {
-    // 0: Apresentação, 1: Credenciais my.telegram.org, 2: Telefone, 3: Código OTP, 4: Senha 2FA
-    var onboardingStep by remember { mutableStateOf(if (authState is AuthState.NeedApiCredentials) 0 else 2) }
+    val context = LocalContext.current
+
+    // 0: Apresentação, 1: Tutorial my.telegram.org, 2: Inserção de API Keys, 3: Telefone, 4: Código OTP, 5: Senha 2FA
+    var onboardingStep by remember { mutableStateOf(if (authState is AuthState.NeedApiCredentials) 0 else 3) }
     var apiIdInput by remember { mutableStateOf("") }
     var apiHashInput by remember { mutableStateOf("") }
     var phoneNumber by remember { mutableStateOf("") }
@@ -48,9 +58,9 @@ fun OnboardingScreen(
 
     LaunchedEffect(authState) {
         when (authState) {
-            is AuthState.WaitPhoneNumber -> if (onboardingStep < 2) onboardingStep = 2
-            is AuthState.WaitCode -> if (onboardingStep < 3) onboardingStep = 3
-            is AuthState.WaitPassword -> if (onboardingStep < 4) onboardingStep = 4
+            is AuthState.WaitPhoneNumber -> if (onboardingStep < 3) onboardingStep = 3
+            is AuthState.WaitCode -> if (onboardingStep < 4) onboardingStep = 4
+            is AuthState.WaitPassword -> if (onboardingStep < 5) onboardingStep = 5
             else -> {}
         }
     }
@@ -67,7 +77,7 @@ fun OnboardingScreen(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Header Minimalista
+            // Header Minimalista com Indicador de Passos
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -84,10 +94,10 @@ fun OnboardingScreen(
                 )
                 // Indicador de Passos
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    repeat(4) { index ->
+                    repeat(5) { index ->
                         Box(
                             modifier = Modifier
-                                .width(if (onboardingStep == index) 24.dp else 8.dp)
+                                .width(if (onboardingStep == index) 22.dp else 8.dp)
                                 .height(6.dp)
                                 .clip(RoundedCornerShape(3.dp))
                                 .background(
@@ -98,279 +108,357 @@ fun OnboardingScreen(
                 }
             }
 
-            // Conteúdo Central
-            AnimatedContent(
-                targetState = onboardingStep,
-                transitionSpec = { fadeIn() togetherWith fadeOut() },
-                label = "OnboardingContent"
-            ) { step ->
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 32.dp),
-                    horizontalAlignment = Alignment.Start
-                ) {
-                    when (step) {
-                        0 -> {
-                            // Passo 0: Apresentação
-                            Box(
-                                modifier = Modifier
-                                    .size(72.dp)
-                                    .clip(CircleShape)
-                                    .background(PrimaryContainer.copy(alpha = 0.2f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Sensors,
-                                    contentDescription = null,
-                                    tint = Primary,
-                                    modifier = Modifier.size(36.dp)
+            // Conteúdo Central Rolável
+            val scrollState = rememberScrollState()
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(scrollState)
+                    .padding(vertical = 16.dp)
+            ) {
+                AnimatedContent(
+                    targetState = onboardingStep,
+                    transitionSpec = { fadeIn() togetherWith fadeOut() },
+                    label = "OnboardingSteps"
+                ) { step ->
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.Start
+                    ) {
+                        when (step) {
+                            0 -> {
+                                // Apresentação
+                                Box(
+                                    modifier = Modifier
+                                        .size(64.dp)
+                                        .clip(CircleShape)
+                                        .background(PrimaryContainer.copy(alpha = 0.3f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Sensors,
+                                        contentDescription = null,
+                                        tint = Primary,
+                                        modifier = Modifier.size(32.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(24.dp))
+                                Text(
+                                    text = "Monitoramento\n100% no Aparelho.",
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 32.sp,
+                                    lineHeight = 38.sp,
+                                    color = OnSurface,
+                                    letterSpacing = (-1).sp
+                                )
+                                Spacer(modifier = Modifier.height(14.dp))
+                                Text(
+                                    text = "O app conecta direto no Telegram pelo protocolo oficial, sem nenhum servidor intermediário lendo seus dados.",
+                                    fontSize = 15.sp,
+                                    lineHeight = 22.sp,
+                                    color = OnSurfaceVariant
                                 )
                             }
-                            Spacer(modifier = Modifier.height(28.dp))
-                            Text(
-                                text = "Monitoramento\n100% no Aparelho.",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 34.sp,
-                                lineHeight = 40.sp,
-                                color = OnSurface,
-                                letterSpacing = (-1).sp
-                            )
+
+                            1 -> {
+                                // Tutorial: Como pegar as credenciais
+                                Box(
+                                    modifier = Modifier
+                                        .size(64.dp)
+                                        .clip(CircleShape)
+                                        .background(PrimaryContainer.copy(alpha = 0.3f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Info,
+                                        contentDescription = null,
+                                        tint = Primary,
+                                        modifier = Modifier.size(32.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(20.dp))
+                                Text(
+                                    text = "Como obter suas\nCredenciais da API",
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 28.sp,
+                                    lineHeight = 34.sp,
+                                    color = OnSurface,
+                                    letterSpacing = (-0.5).sp
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+
+                                // Guia Passo a Passo em Cards Minimalistas
+                                TutorialStepItem(
+                                    number = "1",
+                                    title = "Acesse o portal do Telegram",
+                                    description = "Abra o navegador no site oficial my.telegram.org e entre com seu número."
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                TutorialStepItem(
+                                    number = "2",
+                                    title = "Acesse API development tools",
+                                    description = "Após fazer login com o código que chegar no seu app, clique em 'API development tools'."
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                TutorialStepItem(
+                                    number = "3",
+                                    title = "Crie uma aplicação simples",
+                                    description = "Preencha App title (ex: Minhas Ofertas) e Short name (ex: ofertasapp). Pode deixar o restante em branco."
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                TutorialStepItem(
+                                    number = "4",
+                                    title = "Copie o API ID e API HASH",
+                                    description = "Guarde os dois valores exibidos na tela para preenchê-los a seguir."
+                                )
+
+                                Spacer(modifier = Modifier.height(16.dp))
+
+                                OutlinedButton(
+                                    onClick = {
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://my.telegram.org"))
+                                        context.startActivity(intent)
+                                    },
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Primary),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Abrir my.telegram.org", fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
+                                }
+                            }
+
+                            2 -> {
+                                // Formulário de Entrada das Chaves
+                                Box(
+                                    modifier = Modifier
+                                        .size(64.dp)
+                                        .clip(CircleShape)
+                                        .background(PrimaryContainer.copy(alpha = 0.3f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Key,
+                                        contentDescription = null,
+                                        tint = Primary,
+                                        modifier = Modifier.size(32.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(20.dp))
+                                Text(
+                                    text = "Inserir Credenciais",
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 30.sp,
+                                    color = OnSurface,
+                                    letterSpacing = (-0.5).sp
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "Cole os dados gerados no portal. Eles ficarão salvos apenas na memória do seu celular.",
+                                    fontSize = 14.sp,
+                                    color = OnSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(20.dp))
+
+                                OutlinedTextField(
+                                    value = apiIdInput,
+                                    onValueChange = { apiIdInput = it },
+                                    label = { Text("API ID (Apenas números)") },
+                                    placeholder = { Text("Ex: 12345678") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(16.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                OutlinedTextField(
+                                    value = apiHashInput,
+                                    onValueChange = { apiHashInput = it },
+                                    label = { Text("API HASH (32 caracteres hexadecimais)") },
+                                    placeholder = { Text("Ex: 0123456789abcdef0123456789abcdef") },
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(16.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+
+                            3 -> {
+                                // Telefone
+                                Box(
+                                    modifier = Modifier
+                                        .size(64.dp)
+                                        .clip(CircleShape)
+                                        .background(PrimaryContainer.copy(alpha = 0.3f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Phone,
+                                        contentDescription = null,
+                                        tint = Primary,
+                                        modifier = Modifier.size(32.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(20.dp))
+                                Text(
+                                    text = "Seu Número\ndo Telegram",
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 30.sp,
+                                    lineHeight = 36.sp,
+                                    color = OnSurface,
+                                    letterSpacing = (-0.5).sp
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text(
+                                    text = "Formato com código do país e DDD (Exemplo: +5511999999999).",
+                                    fontSize = 14.sp,
+                                    color = OnSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(20.dp))
+                                OutlinedTextField(
+                                    value = phoneNumber,
+                                    onValueChange = { phoneNumber = it },
+                                    placeholder = { Text("+55...") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(16.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+
+                            4 -> {
+                                // Código OTP
+                                Box(
+                                    modifier = Modifier
+                                        .size(64.dp)
+                                        .clip(CircleShape)
+                                        .background(PrimaryContainer.copy(alpha = 0.3f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.VpnKey,
+                                        contentDescription = null,
+                                        tint = Primary,
+                                        modifier = Modifier.size(32.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(20.dp))
+                                Text(
+                                    text = "Código de\nVerificação",
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 30.sp,
+                                    lineHeight = 36.sp,
+                                    color = OnSurface,
+                                    letterSpacing = (-0.5).sp
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text(
+                                    text = "Digite o código que você acabou de receber no app oficial do Telegram.",
+                                    fontSize = 14.sp,
+                                    color = OnSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(20.dp))
+                                OutlinedTextField(
+                                    value = code,
+                                    onValueChange = { code = it },
+                                    placeholder = { Text("Código de 5 dígitos") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(16.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+
+                            5 -> {
+                                // Senha 2FA
+                                Box(
+                                    modifier = Modifier
+                                        .size(64.dp)
+                                        .clip(CircleShape)
+                                        .background(PrimaryContainer.copy(alpha = 0.3f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Lock,
+                                        contentDescription = null,
+                                        tint = Primary,
+                                        modifier = Modifier.size(32.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(20.dp))
+                                Text(
+                                    text = "Senha em\nDuas Etapas",
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 30.sp,
+                                    lineHeight = 36.sp,
+                                    color = OnSurface,
+                                    letterSpacing = (-0.5).sp
+                                )
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text(
+                                    text = "Sua conta tem verificação em duas etapas. Digite sua senha da nuvem.",
+                                    fontSize = 14.sp,
+                                    color = OnSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(20.dp))
+                                OutlinedTextField(
+                                    value = password,
+                                    onValueChange = { password = it },
+                                    placeholder = { Text("Senha 2FA") },
+                                    visualTransformation = PasswordVisualTransformation(),
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(16.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+
+                        // Alerta de Erro
+                        if (authState is AuthState.Error) {
                             Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "Zero intermediários. Você se conecta diretamente aos canais do Telegram com suas credenciais seguras.",
-                                fontSize = 15.sp,
-                                lineHeight = 22.sp,
-                                color = OnSurfaceVariant
-                            )
-                        }
-
-                        1 -> {
-                            // Passo 1: Inserção de API_ID e API_HASH próprios
-                            Box(
-                                modifier = Modifier
-                                    .size(72.dp)
-                                    .clip(CircleShape)
-                                    .background(PrimaryContainer.copy(alpha = 0.2f)),
-                                contentAlignment = Alignment.Center
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE)),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Key,
-                                    contentDescription = null,
-                                    tint = Primary,
-                                    modifier = Modifier.size(36.dp)
+                                Text(
+                                    text = authState.message,
+                                    color = Color(0xFFC62828),
+                                    fontSize = 13.sp,
+                                    modifier = Modifier.padding(14.dp)
                                 )
                             }
-                            Spacer(modifier = Modifier.height(28.dp))
-                            Text(
-                                text = "Credenciais\nda API Telegram",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 32.sp,
-                                lineHeight = 38.sp,
-                                color = OnSurface,
-                                letterSpacing = (-1).sp
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Gere gratuitamente em my.telegram.org > API development tools.",
-                                fontSize = 13.sp,
-                                color = OnSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(20.dp))
-                            OutlinedTextField(
-                                value = apiIdInput,
-                                onValueChange = { apiIdInput = it },
-                                placeholder = { Text("API ID (ex: 1234567)") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                singleLine = true,
-                                shape = RoundedCornerShape(16.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            OutlinedTextField(
-                                value = apiHashInput,
-                                onValueChange = { apiHashInput = it },
-                                placeholder = { Text("API HASH (ex: abcdef1234...)") },
-                                singleLine = true,
-                                shape = RoundedCornerShape(16.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-
-                        2 -> {
-                            // Passo 2: Número de Telefone
-                            Box(
-                                modifier = Modifier
-                                    .size(72.dp)
-                                    .clip(CircleShape)
-                                    .background(PrimaryContainer.copy(alpha = 0.2f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Phone,
-                                    contentDescription = null,
-                                    tint = Primary,
-                                    modifier = Modifier.size(36.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(28.dp))
-                            Text(
-                                text = "Qual o seu\nTelegram?",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 34.sp,
-                                lineHeight = 40.sp,
-                                color = OnSurface,
-                                letterSpacing = (-1).sp
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = "Informe seu número internacional para receber o código oficial de verificação.",
-                                fontSize = 14.sp,
-                                color = OnSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(24.dp))
-                            OutlinedTextField(
-                                value = phoneNumber,
-                                onValueChange = { phoneNumber = it },
-                                placeholder = { Text("+55 (DDD) 99999-9999") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                                singleLine = true,
-                                shape = RoundedCornerShape(16.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-
-                        3 -> {
-                            // Passo 3: Código OTP
-                            Box(
-                                modifier = Modifier
-                                    .size(72.dp)
-                                    .clip(CircleShape)
-                                    .background(PrimaryContainer.copy(alpha = 0.2f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.VpnKey,
-                                    contentDescription = null,
-                                    tint = Primary,
-                                    modifier = Modifier.size(36.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(28.dp))
-                            Text(
-                                text = "Código de\nConfirmação",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 34.sp,
-                                lineHeight = 40.sp,
-                                color = OnSurface,
-                                letterSpacing = (-1).sp
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = "Insira o código de 5 dígitos recebido no seu app oficial do Telegram.",
-                                fontSize = 14.sp,
-                                color = OnSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(24.dp))
-                            OutlinedTextField(
-                                value = code,
-                                onValueChange = { code = it },
-                                placeholder = { Text("Código de 5 dígitos") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                singleLine = true,
-                                shape = RoundedCornerShape(16.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-
-                        4 -> {
-                            // Passo 4: Senha 2FA
-                            Box(
-                                modifier = Modifier
-                                    .size(72.dp)
-                                    .clip(CircleShape)
-                                    .background(PrimaryContainer.copy(alpha = 0.2f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Lock,
-                                    contentDescription = null,
-                                    tint = Primary,
-                                    modifier = Modifier.size(36.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(28.dp))
-                            Text(
-                                text = "Verificação\nem 2 Etapas",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 34.sp,
-                                lineHeight = 40.sp,
-                                color = OnSurface,
-                                letterSpacing = (-1).sp
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = "Digite sua senha na nuvem para autorizar a nova sessão.",
-                                fontSize = 14.sp,
-                                color = OnSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(24.dp))
-                            OutlinedTextField(
-                                value = password,
-                                onValueChange = { password = it },
-                                placeholder = { Text("Sua senha 2FA") },
-                                visualTransformation = PasswordVisualTransformation(),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                                singleLine = true,
-                                shape = RoundedCornerShape(16.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
-
-                    // Mensagem de Erro
-                    if (authState is AuthState.Error) {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE)),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = authState.message,
-                                color = Color(0xFFC62828),
-                                fontSize = 13.sp,
-                                modifier = Modifier.padding(14.dp)
-                            )
                         }
                     }
                 }
             }
 
-            // Botão de Ação
-            Column(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+            // Barra Inferior de Ação
+            Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
                 Button(
                     onClick = {
                         when (onboardingStep) {
                             0 -> onboardingStep = 1
-                            1 -> {
+                            1 -> onboardingStep = 2
+                            2 -> {
                                 val parsedId = apiIdInput.trim().toIntOrNull()
                                 if (parsedId != null && apiHashInput.isNotBlank()) {
                                     onConfigureApi(parsedId, apiHashInput.trim())
-                                    onboardingStep = 2
+                                    onboardingStep = 3
                                 }
                             }
-                            2 -> {
+                            3 -> {
                                 if (phoneNumber.isNotBlank()) {
                                     onSendPhoneNumber(phoneNumber.trim())
                                 }
                             }
-                            3 -> {
+                            4 -> {
                                 if (code.isNotBlank()) {
                                     onSendCode(code.trim())
                                 }
                             }
-                            4 -> {
+                            5 -> {
                                 if (password.isNotBlank()) {
                                     onSendPassword(password)
                                 }
@@ -389,10 +477,11 @@ fun OnboardingScreen(
                     Text(
                         text = when (onboardingStep) {
                             0 -> "Começar Agora"
-                            1 -> "Salvar Credenciais"
-                            2 -> "Enviar Código"
-                            3 -> "Validar Código"
-                            4 -> "Concluir Conexão"
+                            1 -> "Entendi, Inserir Credenciais"
+                            2 -> "Salvar e Continuar"
+                            3 -> "Enviar Código"
+                            4 -> "Validar Código"
+                            5 -> "Concluir Conexão"
                             else -> "Avançar"
                         },
                         fontWeight = FontWeight.Bold,
@@ -406,6 +495,53 @@ fun OnboardingScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun TutorialStepItem(
+    number: String,
+    title: String,
+    description: String
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(SurfaceContainerLowest)
+            .padding(14.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(PrimaryContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = number,
+                fontWeight = FontWeight.Black,
+                fontSize = 13.sp,
+                color = OnTertiaryContainer
+            )
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                color = OnSurface
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = description,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                color = OnSurfaceVariant
+            )
         }
     }
 }
