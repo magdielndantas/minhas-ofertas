@@ -57,6 +57,22 @@ android {
     buildFeatures {
         compose = true
     }
+
+    applicationVariants.all {
+        val variant = this
+        val variantName = variant.name
+        val vName = variant.versionName
+        variant.outputs.all {
+            val output = this as? com.android.build.gradle.internal.api.BaseVariantOutputImpl
+            val abi = output?.filters?.firstOrNull()?.identifier ?: ""
+            val abiSuffix = if (abi.isNotEmpty()) "-$abi" else ""
+            if (variantName == "release") {
+                output?.outputFileName = "MinhasOfertas-v${vName}${abiSuffix}.apk"
+            } else {
+                output?.outputFileName = "MinhasOfertas-v${vName}${abiSuffix}-${variantName}.apk"
+            }
+        }
+    }
 }
 
 dependencies {
