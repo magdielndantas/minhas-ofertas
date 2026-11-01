@@ -2,9 +2,29 @@ package com.minhasofertas.app.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 
 class UserPreferences(context: Context) {
-    private val prefs: SharedPreferences = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+    private val TAG = "UserPreferences"
+
+    private val prefs: SharedPreferences = try {
+        val masterKey = MasterKey.Builder(context)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+
+        EncryptedSharedPreferences.create(
+            context,
+            "secure_app_prefs",
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    } catch (e: Exception) {
+        Log.e(TAG, "Falha ao inicializar EncryptedSharedPreferences, usando fallback", e)
+        context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+    }
 
     var apiId: Int
         get() = prefs.getInt("api_id", 0)
@@ -16,6 +36,18 @@ class UserPreferences(context: Context) {
 
     val isApiConfigured: Boolean
         get() = apiId > 0 && apiHash.isNotBlank()
+
+    init {
+        // Migra credenciais antigas em texto puro se existirem
+        val legacyPrefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+        val legacyId = legacyPrefs.getInt("api_id", 0)
+        val legacyHash = legacyPrefs.getString("api_hash", "") ?: ""
+        if (legacyId > 0 && legacyHash.isNotBlank() && apiId == 0) {
+            apiId = legacyId
+            apiHash = legacyHash
+            legacyPrefs.edit().clear().apply()
+        }
+    }
 
     fun clear() {
         prefs.edit().clear().apply()

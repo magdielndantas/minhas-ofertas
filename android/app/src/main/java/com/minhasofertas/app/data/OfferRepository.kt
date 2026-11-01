@@ -1,37 +1,53 @@
 package com.minhasofertas.app.data
 
+import android.content.Context
+import com.minhasofertas.app.data.local.AppDatabase
+import com.minhasofertas.app.data.local.OfferEntity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 object OfferRepository {
+    private val repositoryScope = CoroutineScope(Dispatchers.IO + Job())
+    private var database: AppDatabase? = null
+
     private val _offers = MutableStateFlow<List<Offer>>(emptyList())
     val offers = _offers.asStateFlow()
 
     private val _monitoringActive = MutableStateFlow(false)
     val monitoringActive = _monitoringActive.asStateFlow()
 
+    fun init(context: Context) {
+        if (database != null) return
+        val db = AppDatabase.getInstance(context)
+        database = db
+        repositoryScope.launch {
+            db.offerDao().getAllOffersFlow().collect { entities ->
+                _offers.value = entities.map { it.toOffer() }
+            }
+        }
+    }
+
     fun addOffer(offer: Offer) {
-        val current = _offers.value.toMutableList()
-        // Evita duplicata exata no mesmo canal com a mesma mensagem
+        val current = _offers.value
+        // Evita duplicata exata no mesmo canal com a mesma mensagem ou mesmo link de loja
         val exists = current.any {
             it.channel == offer.channel && (it.message == offer.message || (it.storeLink != null && it.storeLink == offer.storeLink))
         }
         if (!exists) {
-            current.add(0, offer)
-            _offers.value = current
+            repositoryScope.launch {
+                database?.offerDao()?.insertOffer(OfferEntity.fromOffer(offer))
+            }
         }
     }
 
     fun updateOfferImage(offerId: Long, imagePath: String) {
-        val current = _offers.value.map { offer ->
-            if (offer.id == offerId) {
-                offer.copy(imagePath = imagePath)
-            } else {
-                offer
-            }
+        repositoryScope.launch {
+            database?.offerDao()?.updateImagePath(offerId, imagePath)
         }
-        _offers.value = current
     }
 
     fun setMonitoringStatus(active: Boolean) {
@@ -39,7 +55,9 @@ object OfferRepository {
     }
 
     fun clearOffers() {
-        _offers.value = emptyList()
+        repositoryScope.launch {
+            database?.offerDao()?.clearAll()
+        }
     }
 
     /**

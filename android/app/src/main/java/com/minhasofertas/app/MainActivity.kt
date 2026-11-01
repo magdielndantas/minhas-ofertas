@@ -24,7 +24,8 @@ import com.minhasofertas.app.ui.theme.AppTypography
 
 class MainActivity : ComponentActivity() {
 
-    private lateinit var telegramManager: TelegramManager
+    private val telegramManager: TelegramManager
+        get() = (application as MinhasOfertasApp).telegramManager
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -32,9 +33,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        telegramManager = TelegramManager(applicationContext)
-        TelegramMonitorService.createChannels(applicationContext)
         checkNotificationPermission()
 
         setContent {
@@ -103,10 +101,5 @@ class MainActivity : ComponentActivity() {
         } else {
             stopService(intent)
         }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        telegramManager.close()
     }
 }
