@@ -8,17 +8,18 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-val Primary = Color(0xFFAF2700)
-val OnPrimary = Color(0xFFFFEFEC)
-val PrimaryContainer = Color(0xFFFF7856)
-val Surface = Color(0xFFFFF4F3)
-val OnSurface = Color(0xFF4E2122)
-val SurfaceContainerLow = Color(0xFFFFEDEC)
+// Paleta Minimalista com Verde Primário #38AD3C
+val Primary = Color(0xFF38AD3C)
+val OnPrimary = Color(0xFFFFFFFF)
+val PrimaryContainer = Color(0xFFC7F5C8)
+val Surface = Color(0xFFFBFDFB)
+val OnSurface = Color(0xFF191C19)
+val SurfaceContainerLow = Color(0xFFF1F5F1)
 val SurfaceContainerLowest = Color(0xFFFFFFFF)
-val OutlineVariant = Color(0xFFDF9C9B)
-val OnSurfaceVariant = Color(0xFF834C4C)
-val TertiaryContainer = Color(0xFFFDC003)
-val OnTertiaryContainer = Color(0xFF553E00)
+val OutlineVariant = Color(0xFFD6DDD6)
+val OnSurfaceVariant = Color(0xFF5C635C)
+val TertiaryContainer = Color(0xFFE8F5E9)
+val OnTertiaryContainer = Color(0xFF1B5E20)
 
 val AppColorScheme = lightColorScheme(
     primary = Primary,

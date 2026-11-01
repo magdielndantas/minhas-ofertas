@@ -8,14 +8,17 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.Crossfade
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import com.minhasofertas.app.data.OfferRepository
 import com.minhasofertas.app.service.TelegramMonitorService
+import com.minhasofertas.app.telegram.AuthState
 import com.minhasofertas.app.telegram.TelegramManager
 import com.minhasofertas.app.ui.MainScreen
+import com.minhasofertas.app.ui.OnboardingScreen
 import com.minhasofertas.app.ui.theme.AppColorScheme
 import com.minhasofertas.app.ui.theme.AppTypography
 
@@ -42,23 +45,33 @@ class MainActivity : ComponentActivity() {
                 val isMonitoring by OfferRepository.monitoringActive.collectAsState()
                 val authState by telegramManager.authState.collectAsState()
 
-                MainScreen(
-                    offers = offers,
-                    isMonitoring = isMonitoring,
-                    authState = authState,
-                    onToggleMonitoring = {
-                        toggleMonitoringService(!isMonitoring)
-                    },
-                    onSendPhoneNumber = { phone ->
-                        telegramManager.setPhoneNumber(phone)
-                    },
-                    onSendCode = { code ->
-                        telegramManager.checkAuthCode(code)
-                    },
-                    onSendPassword = { pass ->
-                        telegramManager.checkPassword(pass)
+                Crossfade(targetState = authState is AuthState.Ready, label = "ScreenTransition") { isReady ->
+                    if (isReady) {
+                        MainScreen(
+                            offers = offers,
+                            isMonitoring = isMonitoring,
+                            onToggleMonitoring = {
+                                toggleMonitoringService(!isMonitoring)
+                            }
+                        )
+                    } else {
+                        OnboardingScreen(
+                            authState = authState,
+                            onConfigureApi = { id, hash ->
+                                telegramManager.configureApi(id, hash)
+                            },
+                            onSendPhoneNumber = { phone ->
+                                telegramManager.setPhoneNumber(phone)
+                            },
+                            onSendCode = { code ->
+                                telegramManager.checkAuthCode(code)
+                            },
+                            onSendPassword = { pass ->
+                                telegramManager.checkPassword(pass)
+                            }
+                        )
                     }
-                )
+                }
             }
         }
     }

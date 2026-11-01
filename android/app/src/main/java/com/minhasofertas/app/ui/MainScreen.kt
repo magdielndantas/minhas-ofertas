@@ -2,11 +2,12 @@ package com.minhasofertas.app.ui
 
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -25,7 +26,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.minhasofertas.app.data.Offer
-import com.minhasofertas.app.telegram.AuthState
 import com.minhasofertas.app.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -33,11 +33,7 @@ import com.minhasofertas.app.ui.theme.*
 fun MainScreen(
     offers: List<Offer>,
     isMonitoring: Boolean,
-    authState: AuthState,
-    onToggleMonitoring: () -> Unit,
-    onSendPhoneNumber: (String) -> Unit,
-    onSendCode: (String) -> Unit,
-    onSendPassword: (String) -> Unit
+    onToggleMonitoring: () -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
 
@@ -49,40 +45,39 @@ fun MainScreen(
         }
     }
 
-    // Modal de Login/Configuração do Telegram
-    AuthDialog(
-        authState = authState,
-        onSendPhoneNumber = onSendPhoneNumber,
-        onSendCode = onSendCode,
-        onSendPassword = onSendPassword
-    )
-
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column {
                         Text(
                             text = "DEAL.EDIT",
                             fontWeight = FontWeight.Black,
+                            fontSize = 20.sp,
                             color = Primary,
                             letterSpacing = (-1).sp
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "| Minhas Ofertas",
-                            fontSize = 14.sp,
-                            color = OnSurfaceVariant
+                            text = if (isMonitoring) "Ao vivo • Monitorando 14 canais" else "Pausado",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = if (isMonitoring) Color(0xFF2E7D32) else OnSurfaceVariant
                         )
                     }
                 },
                 actions = {
-                    IconButton(onClick = onToggleMonitoring) {
+                    IconButton(
+                        onClick = onToggleMonitoring,
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .clip(CircleShape)
+                            .background(if (isMonitoring) Primary.copy(alpha = 0.1f) else Color.Transparent)
+                    ) {
                         Icon(
                             imageVector = if (isMonitoring) Icons.Default.PauseCircle else Icons.Default.PlayCircle,
                             contentDescription = "Status do Monitor",
                             tint = if (isMonitoring) Primary else Color.Gray,
-                            modifier = Modifier.size(32.dp)
+                            modifier = Modifier.size(30.dp)
                         )
                     }
                 },
@@ -97,90 +92,51 @@ fun MainScreen(
             modifier = Modifier
                 .padding(innerPadding)
                 .fillMaxSize()
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = 20.dp)
         ) {
-            // Status Banner
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (isMonitoring) SurfaceContainerLow else Color(0xFFECEFF1)
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = if (isMonitoring) Icons.Default.Sensors else Icons.Default.SensorsOff,
-                        contentDescription = null,
-                        tint = if (isMonitoring) Primary else Color.Gray,
-                        modifier = Modifier.size(28.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = if (isMonitoring) "Monitoramento Ativo" else "Monitoramento Pausado",
-                            fontWeight = FontWeight.Bold,
-                            color = OnSurface
-                        )
-                        Text(
-                            text = if (authState == AuthState.Ready) {
-                                if (isMonitoring) "Recebendo promoções dos canais configurados" else "Toque no ícone acima para iniciar"
-                            } else {
-                                "Necessário conectar conta do Telegram"
-                            },
-                            fontSize = 12.sp,
-                            color = OnSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            // Barra de Busca
+            // Barra de Busca Minimalista
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text("Filtrar por nome, marca ou canal...") },
+                placeholder = { Text("Buscar periférico, hardware ou marca...") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = OnSurfaceVariant) },
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(18.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 8.dp),
+                    .padding(vertical = 12.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Primary,
-                    unfocusedBorderColor = OutlineVariant,
+                    unfocusedBorderColor = OutlineVariant.copy(alpha = 0.5f),
                     focusedContainerColor = SurfaceContainerLowest,
                     unfocusedContainerColor = SurfaceContainerLowest
                 ),
                 singleLine = true
             )
 
-            // Contador de resultados
+            // Header de Estatísticas Minimalista
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 4.dp),
+                    .padding(bottom = 12.dp, top = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Ofertas Detectadas",
-                    fontWeight = FontWeight.Bold,
+                    text = "Feed de Promoções",
+                    fontWeight = FontWeight.Black,
                     fontSize = 18.sp,
-                    color = OnSurface
+                    color = OnSurface,
+                    letterSpacing = (-0.5).sp
                 )
                 Text(
-                    text = "${filteredOffers.size} itens",
-                    fontWeight = FontWeight.Bold,
+                    text = "${filteredOffers.size} itens capturados",
                     fontSize = 12.sp,
-                    color = Primary
+                    fontWeight = FontWeight.Bold,
+                    color = OnSurfaceVariant
                 )
             }
 
-            // Lista de Cards
+            // Lista de Ofertas
             if (filteredOffers.isEmpty()) {
                 Box(
                     modifier = Modifier
@@ -188,20 +144,38 @@ fun MainScreen(
                         .padding(32.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = if (isMonitoring) "Aguardando novas mensagens dos canais..." else "Nenhuma oferta capturada ainda.",
-                        color = OnSurfaceVariant,
-                        fontSize = 14.sp
-                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(
+                            modifier = Modifier
+                                .size(64.dp)
+                                .clip(CircleShape)
+                                .background(SurfaceContainerLow),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Sensors,
+                                contentDescription = null,
+                                tint = OnSurfaceVariant,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = if (isMonitoring) "Aguardando novas postagens..." else "Monitoramento pausado.",
+                            color = OnSurfaceVariant,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = PaddingValues(vertical = 8.dp)
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    contentPadding = PaddingValues(bottom = 24.dp)
                 ) {
                     items(filteredOffers, key = { it.id }) { offer ->
-                        OfferCard(offer = offer)
+                        ModernOfferCard(offer = offer)
                     }
                 }
             }
@@ -210,41 +184,50 @@ fun MainScreen(
 }
 
 @Composable
-fun OfferCard(offer: Offer) {
+fun ModernOfferCard(offer: Offer) {
     val context = LocalContext.current
 
     Card(
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = SurfaceContainerLowest),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column {
-            // Imagem (se disponível)
+            // Imagem de Alta Fidelidade (se houver)
             if (!offer.imagePath.isNullOrBlank()) {
                 AsyncImage(
                     model = offer.imagePath,
                     contentDescription = null,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(180.dp)
-                        .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)),
+                        .height(200.dp)
+                        .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)),
                     contentScale = ContentScale.Crop
                 )
             }
 
-            Column(modifier = Modifier.padding(16.dp)) {
-                // Header do Card: Canal e Horário
+            Column(modifier = Modifier.padding(20.dp)) {
+                // Header: Tag do Canal e Data
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "📢 ${offer.channel}",
-                        style = AppTypography.labelSmall,
-                        color = Primary
-                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(SurfaceContainerLow)
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = offer.channel.uppercase(),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 0.5.sp,
+                            color = Primary
+                        )
+                    }
                     Text(
                         text = offer.timestamp,
                         fontSize = 11.sp,
@@ -252,35 +235,55 @@ fun OfferCard(offer: Offer) {
                     )
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
-                // Mensagem
+                // Mensagem com quebra suave
                 Text(
                     text = offer.message,
                     style = AppTypography.bodyMedium,
                     color = OnSurface,
                     maxLines = 3,
+                    lineHeight = 22.sp,
                     overflow = TextOverflow.Ellipsis
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                if (!offer.coupon.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "🎟 Cupom: ${offer.coupon}",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Primary
+                    )
+                }
 
-                // Rodapé: Preço e Botão de Link
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Preço e Botão de Ação Minimalista
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (offer.price != null) {
-                        Text(
-                            text = "R$ ${"%.2f".format(offer.price)}",
-                            fontWeight = FontWeight.Black,
-                            fontSize = 20.sp,
-                            color = OnSurface
-                        )
+                        Column {
+                            Text(
+                                text = "A PARTIR DE",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = OnSurfaceVariant
+                            )
+                            Text(
+                                text = "R$ ${"%.2f".format(offer.price)}",
+                                fontWeight = FontWeight.Black,
+                                fontSize = 22.sp,
+                                color = OnSurface,
+                                letterSpacing = (-0.5).sp
+                            )
+                        }
                     } else {
                         Text(
-                            text = "Ver no Canal",
+                            text = "Preço no Canal",
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp,
                             color = OnSurfaceVariant
@@ -298,10 +301,11 @@ fun OfferCard(offer: Offer) {
                             containerColor = Primary,
                             contentColor = OnPrimary
                         ),
-                        shape = RoundedCornerShape(50)
+                        shape = RoundedCornerShape(50),
+                        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
                     ) {
-                        Text("Ver Oferta", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Ver Oferta", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.width(6.dp))
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowForward,
                             contentDescription = null,

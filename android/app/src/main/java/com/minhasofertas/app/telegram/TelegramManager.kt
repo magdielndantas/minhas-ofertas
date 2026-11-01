@@ -1,15 +1,16 @@
 package com.minhasofertas.app.telegram
 
 import android.content.Context
+import android.util.Log
 import com.minhasofertas.app.data.AppConfig
 import com.minhasofertas.app.data.Offer
 import com.minhasofertas.app.data.OfferRepository
 import com.minhasofertas.app.data.PriceParser
+import com.minhasofertas.app.data.UserPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
 import org.drinkless.tdlib.Client
 import org.drinkless.tdlib.TdApi
 import java.io.File
@@ -19,31 +20,53 @@ import java.util.Locale
 
 class TelegramManager(private val context: Context) : Client.ResultHandler {
 
+    private val TAG = "TelegramManager"
     private val scope = CoroutineScope(Dispatchers.IO)
     private var client: Client? = null
+    val userPreferences = UserPreferences(context)
 
-    private val _authState = MutableStateFlow<AuthState>(AuthState.Initial)
+    private val _authState = MutableStateFlow<AuthState>(
+        if (userPreferences.isApiConfigured) AuthState.Initial else AuthState.NeedApiCredentials
+    )
     val authState = _authState.asStateFlow()
 
     private val chatTitles = mutableMapOf<Long, String>()
     private val chatUsernames = mutableMapOf<Long, String>()
 
     init {
+        if (userPreferences.isApiConfigured) {
+            initClient()
+        }
+    }
+
+    fun configureApi(apiId: Int, apiHash: String) {
+        userPreferences.apiId = apiId
+        userPreferences.apiHash = apiHash
+        _authState.value = AuthState.Initial
         initClient()
     }
 
     private fun initClient() {
-        Client.execute(TdApi.SetLogVerbosityLevel(1))
-        client = Client.create(this, { e ->
-            _authState.value = AuthState.Error(e.message ?: "Erro no cliente TDLib")
-        }, { t ->
-            _authState.value = AuthState.Error(t.message ?: "Erro crítico no TDLib")
-        })
+        try {
+            Client.execute(TdApi.SetLogVerbosityLevel(1))
+            client = Client.create(this, { e ->
+                Log.e(TAG, "Exceção no TDLib: ${e.message}")
+                _authState.value = AuthState.Error(e.message ?: "Erro no cliente TDLib")
+            }, { t ->
+                Log.e(TAG, "Erro crítico no TDLib", t)
+                _authState.value = AuthState.Error(t.message ?: "Erro crítico no TDLib")
+            })
+        } catch (e: Exception) {
+            Log.e(TAG, "Falha ao criar cliente TDLib", e)
+            _authState.value = AuthState.Error("Falha na inicialização nativa: ${e.message}")
+        }
     }
 
     override fun onResult(`object`: TdApi.Object?) {
+        if (`object` == null) return
         when (`object`) {
             is TdApi.UpdateAuthorizationState -> {
+                Log.d(TAG, "UpdateAuthorizationState: ${`object`.authorizationState::class.java.simpleName}")
                 handleAuthState(`object`.authorizationState)
             }
             is TdApi.UpdateNewMessage -> {
@@ -52,6 +75,10 @@ class TelegramManager(private val context: Context) : Client.ResultHandler {
             is TdApi.UpdateNewChat -> {
                 val chat = `object`.chat
                 chatTitles[chat.id] = chat.title
+            }
+            is TdApi.Error -> {
+                Log.e(TAG, "TDLib Error (${`object`.code}): ${`object`.message}")
+                _authState.value = AuthState.Error(`object`.message)
             }
         }
     }
@@ -62,21 +89,30 @@ class TelegramManager(private val context: Context) : Client.ResultHandler {
                 val tdDir = File(context.filesDir, "tdlib")
                 if (!tdDir.exists()) tdDir.mkdirs()
 
-                val parameters = TdApi.SetTdlibParameters().apply {
-                    databaseDirectory = tdDir.absolutePath
-                    useMessageDatabase = true
-                    useSecretChats = false
-                    apiId = AppConfig.API_ID
-                    apiHash = AppConfig.API_HASH
-                    systemLanguageCode = "pt-br"
-                    deviceModel = "Android Device"
-                    systemVersion = "Android"
-                    applicationVersion = "1.0"
-                }
+                val filesDir = File(context.filesDir, "tdlib_files")
+                if (!filesDir.exists()) filesDir.mkdirs()
+
+                val parameters = TdApi.SetTdlibParameters(
+                    false,                          // useTestDc
+                    tdDir.absolutePath,             // databaseDirectory
+                    filesDir.absolutePath,          // filesDirectory
+                    ByteArray(0),                   // databaseEncryptionKey
+                    true,                           // useFileDatabase
+                    true,                           // useChatInfoDatabase
+                    true,                           // useMessageDatabase
+                    false,                          // useSecretChats
+                    userPreferences.apiId,          // apiId configurado pelo usuário
+                    userPreferences.apiHash,        // apiHash configurado pelo usuário
+                    "pt-br",                        // systemLanguageCode
+                    "Android Device",               // deviceModel
+                    "Android",                      // systemVersion
+                    "1.0.4"                         // applicationVersion
+                )
 
                 client?.send(parameters) { result ->
                     if (result is TdApi.Error) {
-                        _authState.value = AuthState.Error(result.message)
+                        Log.e(TAG, "Erro ao enviar SetTdlibParameters: ${result.message}")
+                        _authState.value = AuthState.Error("Erro nos parâmetros: ${result.message}")
                     }
                 }
             }
@@ -97,6 +133,9 @@ class TelegramManager(private val context: Context) : Client.ResultHandler {
             is TdApi.AuthorizationStateClosed -> {
                 _authState.value = AuthState.Initial
             }
+            else -> {
+                Log.d(TAG, "Estado de autorização: $state")
+            }
         }
     }
 
@@ -104,6 +143,7 @@ class TelegramManager(private val context: Context) : Client.ResultHandler {
         val settings = TdApi.PhoneNumberAuthenticationSettings()
         client?.send(TdApi.SetAuthenticationPhoneNumber(phoneNumber, settings)) { result ->
             if (result is TdApi.Error) {
+                Log.e(TAG, "Erro ao enviar telefone: ${result.message}")
                 _authState.value = AuthState.Error(result.message)
             }
         }
@@ -112,6 +152,7 @@ class TelegramManager(private val context: Context) : Client.ResultHandler {
     fun checkAuthCode(code: String) {
         client?.send(TdApi.CheckAuthenticationCode(code)) { result ->
             if (result is TdApi.Error) {
+                Log.e(TAG, "Erro ao validar código: ${result.message}")
                 _authState.value = AuthState.Error(result.message)
             }
         }
@@ -120,6 +161,7 @@ class TelegramManager(private val context: Context) : Client.ResultHandler {
     fun checkPassword(password: String) {
         client?.send(TdApi.CheckAuthenticationPassword(password)) { result ->
             if (result is TdApi.Error) {
+                Log.e(TAG, "Erro na senha 2FA: ${result.message}")
                 _authState.value = AuthState.Error(result.message)
             }
         }
@@ -131,7 +173,6 @@ class TelegramManager(private val context: Context) : Client.ResultHandler {
                 if (result is TdApi.Chat) {
                     chatTitles[result.id] = result.title
                     chatUsernames[result.id] = username
-                    // Abre o chat para receber atualizações de mensagens
                     client?.send(TdApi.OpenChat(result.id), null)
                 }
             }

@@ -1,9 +1,6 @@
 package com.minhasofertas.app.data
 
 object AppConfig {
-    const val API_ID = 36505075
-    const val API_HASH = "eabddadd95b56ff15a2ccddea330ac96"
-
     val DEFAULT_CHANNELS = listOf(
         "ofertasdodiaon",
         "promocasinha",
