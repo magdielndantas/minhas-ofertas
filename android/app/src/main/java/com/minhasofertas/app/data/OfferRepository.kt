@@ -98,32 +98,71 @@ object OfferRepository {
         return db.priceHistoryDao().getHistoryForGroupFlow(groupKey)
     }
 
+    private class OfferCluster(firstOffer: Offer, val key: String) {
+        val offers = mutableListOf(firstOffer)
+        val canonicals = mutableSetOf<String>()
+        val tokens = mutableSetOf<String>()
+
+        init {
+            val can = (firstOffer.storeLink ?: firstOffer.link).let { UrlResolver.extractCanonicalKey(it) }
+            if (can != null) canonicals.add(can)
+            tokens.addAll(PriceParser.extractProductTokens(firstOffer.product ?: firstOffer.message))
+        }
+
+        fun matches(offerCan: String?, offerTokens: Set<String>): Boolean {
+            // 1. Mesmo identificador canônico de loja (ASIN, MLB, etc.)
+            if (offerCan != null && canonicals.contains(offerCan)) {
+                return true
+            }
+
+            // 2. Similaridade de tokens semânticos do produto
+            if (offerTokens.isNotEmpty() && tokens.isNotEmpty()) {
+                val sim = PriceParser.calculateTokenSimilarity(offerTokens, tokens)
+                if (sim >= 0.52) {
+                    return true
+                }
+            }
+            return false
+        }
+
+        fun add(offer: Offer, offerCan: String?, offerTokens: Set<String>) {
+            offers.add(offer)
+            if (offerCan != null) canonicals.add(offerCan)
+            tokens.addAll(offerTokens)
+        }
+    }
+
     fun computeGroupKey(offer: Offer): String {
         // 1. Identificador canônico de e-commerce (ASIN, MLB, Shopee, Magalu, Kabum)
-        val canonical = offer.storeLink?.let { UrlResolver.extractCanonicalKey(it) }
+        val canonical = (offer.storeLink ?: offer.link).let { UrlResolver.extractCanonicalKey(it) }
         if (canonical != null) return canonical
 
-        // 2. Simplificação de link de loja direta
-        if (!offer.storeLink.isNullOrBlank()) {
+        // 2. Se for link direto de produto sem ser encurtador de afiliado
+        if (!offer.storeLink.isNullOrBlank() && !UrlResolver.isShortener(offer.storeLink)) {
             val cleanUrl = offer.storeLink.substringBefore("?").lowercase()
-            if (cleanUrl.length >= 10) return cleanUrl
+            if (cleanUrl.length >= 12 && !cleanUrl.endsWith("/")) {
+                val segment = cleanUrl.substringAfterLast("/")
+                if (segment.length >= 5) return "url_$segment"
+            }
         }
 
-        // 3. Normalização textual do título
-        if (!offer.product.isNullOrBlank()) {
-            val norm = PriceParser.normalizeTitleForGrouping(offer.product)
-            if (norm.length >= 4) return norm
+        // 3. Assinatura semântica de tokens de produto
+        val tokens = PriceParser.extractProductTokens(offer.product ?: offer.message)
+        if (tokens.isNotEmpty()) {
+            return "tokens_" + tokens.sorted().take(6).joinToString("_")
         }
 
-        val title = PriceParser.extractProductTitle(offer.message)
-        val norm = PriceParser.normalizeTitleForGrouping(title)
-        return if (norm.length >= 4) norm else "single_${offer.id}"
+        return "single_${offer.id}"
     }
 
     fun addOffer(rawOffer: Offer) {
         val current = _offers.value
+        val offerKey = computeGroupKey(rawOffer)
         val exists = current.any {
-            it.channel == rawOffer.channel && (it.message == rawOffer.message || (it.storeLink != null && it.storeLink == rawOffer.storeLink))
+            it.channel == rawOffer.channel && (
+                it.message == rawOffer.message ||
+                computeGroupKey(it) == offerKey
+            )
         }
         if (exists) return
 
@@ -189,14 +228,31 @@ object OfferRepository {
      * calculando o menor preço, descontos, fontes e indicador de tendência.
      */
     fun groupOffers(rawOffers: List<Offer>): List<GroupedOffer> {
-        val groups = linkedMapOf<String, MutableList<Offer>>()
+        val clusters = mutableListOf<OfferCluster>()
 
         for (offer in rawOffers) {
-            val key = computeGroupKey(offer)
-            groups.getOrPut(key) { mutableListOf() }.add(offer)
+            val can = (offer.storeLink ?: offer.link).let { UrlResolver.extractCanonicalKey(it) }
+            val tokens = PriceParser.extractProductTokens(offer.product ?: offer.message)
+
+            var matchedCluster: OfferCluster? = null
+            for (cluster in clusters) {
+                if (cluster.matches(can, tokens)) {
+                    matchedCluster = cluster
+                    break
+                }
+            }
+
+            if (matchedCluster != null) {
+                matchedCluster.add(offer, can, tokens)
+            } else {
+                val primaryKey = can ?: computeGroupKey(offer)
+                clusters.add(OfferCluster(offer, primaryKey))
+            }
         }
 
-        return groups.map { (key, groupList) ->
+        return clusters.map { cluster ->
+            val groupList = cluster.offers
+            val key = cluster.key
             val firstOffer = groupList.first()
             val title = firstOffer.product ?: PriceParser.extractProductTitle(firstOffer.message)
 

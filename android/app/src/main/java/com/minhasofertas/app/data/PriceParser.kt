@@ -198,19 +198,68 @@ object PriceParser {
         return storeUrl ?: urls.firstOrNull()
     }
 
+    private val STOPWORDS = setOf(
+        "oferta", "promo", "promocao", "promocional", "imperdivel", "menor", "preco",
+        "historico", "apenas", "frete", "gratis", "cupom", "desconto", "link", "loja",
+        "compre", "confira", "garanta", "corre", "urgente", "hoje", "pix", "cartao",
+        "vista", "parcelado", "juros", "sem", "com", "para", "por", "original",
+        "novo", "brasil", "de", "da", "do", "em", "no", "na", "os", "as", "um", "uma",
+        "super", "top", "sensacional", "barato", "reais", "canal", "grupo", "mais",
+        "menos", "sobre", "ate", "pelo", "pela", "qualquer", "oficial", "melhor"
+    )
+
+    private val CAPACITY_UNITS = setOf("gb", "tb", "hz", "pol", "polegadas", "v", "w", "mah")
+
+    fun removeAccents(str: String): String {
+        val nfkd = java.text.Normalizer.normalize(str, java.text.Normalizer.Form.NFD)
+        return nfkd.replace(Regex("""\p{InCombiningDiacriticalMarks}+"""), "")
+    }
+
+    /**
+     * Extrai tokens limpos e significativos do produto a partir do texto do anúncio.
+     * Foca nas primeiras 3 linhas (onde está o título), remove ruídos e números monetários.
+     */
+    fun extractProductTokens(text: String): Set<String> {
+        val lines = text.lines().map { it.trim() }.filter { it.isNotBlank() }
+        val header = lines.take(3).joinToString(" ")
+
+        val noUrls = header.replace(Regex("""https?://\S+"""), " ")
+        val noMoney = noUrls.replace(Regex("""R\$\s*[\d.,]+"""), " ")
+        val noInstallments = noMoney.replace(Regex("""\d+x\s*(?:de\s*)?[\d.,]+"""), " ")
+
+        val clean = removeAccents(noInstallments).lowercase()
+            .replace(Regex("""[^a-z0-9\s]"""), " ")
+
+        return clean.split(Regex("""\s+""")).filter { token ->
+            token.length >= 2 && token !in STOPWORDS
+        }.toSet()
+    }
+
+    /**
+     * Calcula a similaridade semântica (Jaccard + Containment) entre conjuntos de tokens de produto.
+     * Aplica guard-rails estritos de especificações (ex: não agrupa 1TB com 500GB ou 27" com 24").
+     */
+    fun calculateTokenSimilarity(s1: Set<String>, s2: Set<String>): Double {
+        if (s1.isEmpty() || s2.isEmpty()) return 0.0
+
+        val inter = s1.intersect(s2).size
+        val union = s1.union(s2).size
+        val jaccard = inter.toDouble() / union.toDouble()
+        val containment = maxOf(inter.toDouble() / s1.size, inter.toDouble() / s2.size)
+        val score = maxOf(jaccard, containment * 0.85)
+
+        val specs1 = s1.filter { token -> token.any { it.isDigit() } && CAPACITY_UNITS.any { token.endsWith(it) } }.toSet()
+        val specs2 = s2.filter { token -> token.any { it.isDigit() } && CAPACITY_UNITS.any { token.endsWith(it) } }.toSet()
+
+        if (specs1.isNotEmpty() && specs2.isNotEmpty() && specs1.intersect(specs2).isEmpty()) {
+            return 0.0
+        }
+
+        return score
+    }
+
     fun normalizeTitleForGrouping(title: String): String {
-        return title.lowercase()
-            .replace(Regex("""[^\w\s\d]"""), " ")
-            .split(" ")
-            .filter { word ->
-                word.length > 2 && word !in setOf(
-                    "com", "para", "por", "oferta", "promo", "promocao",
-                    "gamer", "original", "novo", "menor", "preco", "super"
-                )
-            }
-            .take(5)
-            .sorted()
-            .joinToString(" ")
+        return extractProductTokens(title).sorted().joinToString(" ")
     }
 
     fun isOfferMatching(

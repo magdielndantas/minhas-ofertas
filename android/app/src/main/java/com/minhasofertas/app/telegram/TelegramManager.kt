@@ -10,6 +10,7 @@ import com.minhasofertas.app.data.OfferRepository
 import com.minhasofertas.app.data.PriceParser
 import com.minhasofertas.app.data.UserPreferences
 import com.minhasofertas.app.service.TelegramMonitorService
+import com.minhasofertas.app.util.UrlResolver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
