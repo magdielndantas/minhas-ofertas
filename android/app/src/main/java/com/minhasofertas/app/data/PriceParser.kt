@@ -4,27 +4,33 @@ import java.util.regex.Pattern
 
 object PriceParser {
 
+    // Regex ampliado de parcelamentos para evitar capturar valores de parcelas como preço do produto
     private val INSTALLMENT_REGEX = Pattern.compile(
-        """\d+\s*x\s*(?:de\s*)?R\$\s*[\d.,]+""",
+        """(?i)(?:em\s+at[ée]\s+|at[ée]\s+)?\d{1,2}\s*x\s*(?:(?:sem\s+juros|com\s+juros|no\s+cart[ãa]o|fixas)\s+)*(?:de\s+)?(?:R\$\s*)?[\d.,]+(?:\s*(?:sem|com)\s+juros)?""",
         Pattern.CASE_INSENSITIVE
     )
 
+    // Regex de valores secundários a serem desconsiderados (frete, cashback, valor de cupom)
     private val SECONDARY_AMOUNTS_REGEX = Pattern.compile(
-        """(?i)(?:frete|envio|entrega|cashback|de\s+volta|reembolso|b[oó]nus|cupom(?:\s+de)?|desconto(?:\s+de)?)\s*(?:gr[áa]tis|de\s*)?\s*R?\$?\s*(\d{1,3}(?:\.\d{3})*|\d+)[.,](\d{2})""",
+        """(?i)(?:frete|envio|entrega|cashback|de\s+volta|reembolso|b[oó]nus|cupom(?:\s+de)?|desconto(?:\s+de)?)\s*(?:gr[áa]tis|de\s*)?\s*R?\$?\s*[\d.,]+""",
         Pattern.CASE_INSENSITIVE
     )
 
+    // Padrão De ... Por ...
     private val DE_POR_REGEX = Pattern.compile(
-        """(?:de|de:\s*|de\s+R\$)\s*R?\$?\s*([\d.]+,\d{2}|\d+,\d{2})\s*(?:por|por:\s*|por\s+apenas|pra|por\s+R\$)\s*R?\$?\s*([\d.]+,\d{2}|\d+,\d{2})""",
+        """(?i)(?:de|de:)\s*R?\$?\s*([\d.,]+)\s*(?:por|por:|por\s+apenas|pra|por\s+R\$)\s*R?\$?\s*([\d.,]+)""",
         Pattern.CASE_INSENSITIVE
     )
 
+    // Preço com indicativo explícito de preço final
     private val PRIORITY_PRICE_REGEX = Pattern.compile(
-        """(?i)(?:por|por\s+apenas|sai\s+por|apenas|s[oó]|no\s+pix|à\s+vista|total)\s*(?:de\s*)?R?\$?\s*(\d{1,3}(?:\.\d{3})*|\d+)[.,](\d{2})"""
+        """(?i)(?:por|por\s+apenas|sai\s+por|apenas|s[oó]|no\s+pix|à\s+vista|a\s+vista|total)\s*(?:de\s*)?R\$\s*([\d.,]+)""",
+        Pattern.CASE_INSENSITIVE
     )
 
-    private val PRICE_REGEX = Pattern.compile(
-        """(?:R\$\s*|por\s+R\$\s*)(\d{1,3}(?:\.\d{3})*|\d+)[.,](\d{2})""",
+    // Preço monetário geral com R$
+    private val MONEY_REGEX = Pattern.compile(
+        """R\$\s*([\d.,]+)""",
         Pattern.CASE_INSENSITIVE
     )
 
@@ -37,6 +43,47 @@ object PriceParser {
         """https?://[^\s)\]>]+""",
         Pattern.CASE_INSENSITIVE
     )
+
+    /**
+     * Converte representações numéricas no padrão brasileiro (e variantes internacionais) para Double.
+     * Suporta inteiros sem centavos (ex: "100", "1.000"), decimais com vírgula ("100,00", "2.499,90")
+     * e decimais com ponto ("49.90").
+     */
+    fun parseAmount(rawStr: String): Double? {
+        val s = rawStr.trim()
+        if (s.isBlank()) return null
+
+        val normalized = when {
+            // Caso 1: tem ponto e vírgula, ex: "1.500,00" ou "2.499,90"
+            s.contains(".") && s.contains(",") -> {
+                s.replace(".", "").replace(",", ".")
+            }
+            // Caso 2: tem apenas vírgula, ex: "100,00" ou "49,90"
+            s.contains(",") -> {
+                s.replace(",", ".")
+            }
+            // Caso 3: tem apenas ponto, ex: "1.000", "1.500", "10.000" OU "49.90"
+            s.contains(".") -> {
+                val parts = s.split(".")
+                if (parts.size == 2) {
+                    // Se tem 3 dígitos após o ponto (ex: "1.000", "2.500"), é milhar brasileiro sem centavos
+                    if (parts[1].length == 3) {
+                        parts[0] + parts[1]
+                    } else {
+                        // "49.90" ou "10.5" -> formato decimal
+                        s
+                    }
+                } else {
+                    // Mais de um ponto: "1.000.000" -> junta tudo
+                    s.replace(".", "")
+                }
+            }
+            // Caso 4: apenas dígitos inteiros: "100", "99", "1500"
+            else -> s
+        }
+
+        return normalized.toDoubleOrNull()?.takeIf { it > 0 }
+    }
 
     fun extractProductTitle(text: String): String {
         val lines = text.lines().map { it.trim() }.filter { it.isNotBlank() }
@@ -54,58 +101,55 @@ object PriceParser {
     }
 
     fun extractPrices(text: String): Pair<Double?, Double?> {
-        // 1. Remove valores de parcelamento
-        val noInstallments = INSTALLMENT_REGEX.matcher(text).replaceAll("")
+        // 1. Remove valores de parcelamento para não confundir a parcela com o valor total
+        val noInstallments = INSTALLMENT_REGEX.matcher(text).replaceAll(" ")
 
         // 2. Remove valores secundários (frete, cashback, valor de cupom)
-        val cleanText = SECONDARY_AMOUNTS_REGEX.matcher(noInstallments).replaceAll("")
+        val cleanText = SECONDARY_AMOUNTS_REGEX.matcher(noInstallments).replaceAll(" ")
 
-        // 3. Tenta capturar padrão "De R$ X por R$ Y"
+        // 3. Tenta capturar padrão explícito "De R$ X por R$ Y"
         val dePorMatcher = DE_POR_REGEX.matcher(cleanText)
         if (dePorMatcher.find()) {
-            val p1Str = dePorMatcher.group(1)?.replace(".", "")?.replace(",", ".") ?: ""
-            val p2Str = dePorMatcher.group(2)?.replace(".", "")?.replace(",", ".") ?: ""
-            val p1 = p1Str.toDoubleOrNull()
-            val p2 = p2Str.toDoubleOrNull()
-            if (p1 != null && p2 != null) {
-                val current = minOf(p1, p2)
-                val original = maxOf(p1, p2)
-                return current to original
+            val v1 = parseAmount(dePorMatcher.group(1) ?: "")
+            val v2 = parseAmount(dePorMatcher.group(2) ?: "")
+            if (v1 != null && v2 != null) {
+                return minOf(v1, v2) to maxOf(v1, v2)
             }
         }
 
         // 4. Procura preço com indicativo explícito de preço final ("por R$ X", "sai por R$ X", "à vista R$ X")
         val priorityMatcher = PRIORITY_PRICE_REGEX.matcher(cleanText)
         if (priorityMatcher.find()) {
-            val intPart = priorityMatcher.group(1)?.replace(".", "") ?: ""
-            val decPart = priorityMatcher.group(2) ?: "00"
-            val price = "$intPart.$decPart".toDoubleOrNull()
+            val price = parseAmount(priorityMatcher.group(1) ?: "")
             if (price != null && price > 0) {
                 return price to null
             }
         }
 
-        // 5. Captura o menor preço geral encontrado (filtrando valores anômalos espúrios)
-        val matcher = PRICE_REGEX.matcher(cleanText)
+        // 5. Captura todos os preços monetários com R$ presentes
+        val matcher = MONEY_REGEX.matcher(cleanText)
         val prices = mutableListOf<Double>()
         while (matcher.find()) {
-            val intPart = matcher.group(1)?.replace(".", "") ?: ""
-            val decPart = matcher.group(2) ?: "00"
-            val priceStr = "$intPart.$decPart"
-            priceStr.toDoubleOrNull()?.let { prices.add(it) }
+            val raw = matcher.group(1) ?: ""
+            parseAmount(raw)?.let { prices.add(it) }
         }
 
         if (prices.isEmpty()) return null to null
 
+        // Se houver exatamente 2 preços, assume menor como atual e maior como original
+        if (prices.size == 2) {
+            return minOf(prices[0], prices[1]) to maxOf(prices[0], prices[1])
+        }
+
+        // Se houver preços altos (> 30) e preços espúrios residuais (< 5), descarta os espúrios
         val maxPrice = prices.maxOrNull() ?: 0.0
-        // Se houver preços altos (> 30) e preços insignificantes (< 5), descarta os insignificantes (prováveis taxas ou tokens)
         val validPrices = if (maxPrice >= 30.0) {
             prices.filter { it >= 5.0 }
         } else {
             prices
         }
 
-        val current = (if (validPrices.isNotEmpty()) validPrices else prices).minOrNull()
+        val current = validPrices.firstOrNull() ?: prices.firstOrNull()
         return current to null
     }
 

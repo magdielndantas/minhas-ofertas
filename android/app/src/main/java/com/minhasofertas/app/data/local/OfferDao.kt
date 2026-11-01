@@ -12,6 +12,12 @@ interface OfferDao {
     @Query("SELECT * FROM offers ORDER BY createdAt DESC")
     fun getAllOffersFlow(): Flow<List<OfferEntity>>
 
+    @Query("SELECT * FROM offers")
+    suspend fun getAllOffersSync(): List<OfferEntity>
+
+    @Query("UPDATE offers SET price = :price, originalPrice = :originalPrice, discountPercent = :discountPercent WHERE id = :offerId")
+    suspend fun updatePrices(offerId: Long, price: Double?, originalPrice: Double?, discountPercent: Int?)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOffer(offer: OfferEntity)
 

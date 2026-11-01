@@ -48,6 +48,24 @@ object OfferRepository {
                 _watchlist.value = list.associateBy { it.groupKey }
             }
         }
+
+        // Saneamento automático on-device de preços previamente persistidos
+        repositoryScope.launch {
+            try {
+                val stored = db.offerDao().getAllOffersSync()
+                for (entity in stored) {
+                    val (recalculatedPrice, recalculatedOriginal) = PriceParser.extractPrices(entity.message)
+                    if (recalculatedPrice != null && recalculatedPrice != entity.price) {
+                        val discount = if (recalculatedOriginal != null && recalculatedOriginal > recalculatedPrice) {
+                            (((recalculatedOriginal - recalculatedPrice) / recalculatedOriginal) * 100).toInt()
+                        } else entity.discountPercent
+                        db.offerDao().updatePrices(entity.id, recalculatedPrice, recalculatedOriginal, discount)
+                    }
+                }
+            } catch (e: Exception) {
+                // Saneamento tolerante a falhas
+            }
+        }
     }
 
     fun toggleFavorite(groupKey: String, title: String) {
