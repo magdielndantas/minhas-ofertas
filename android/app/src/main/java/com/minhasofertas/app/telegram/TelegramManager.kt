@@ -33,6 +33,7 @@ class TelegramManager(private val context: Context) : Client.ResultHandler {
 
     private val chatTitles = mutableMapOf<Long, String>()
     private val chatUsernames = mutableMapOf<Long, String>()
+    private val fileIdToOfferId = mutableMapOf<Int, Long>()
 
     init {
         if (userPreferences.isApiConfigured) {
@@ -84,6 +85,15 @@ class TelegramManager(private val context: Context) : Client.ResultHandler {
             is TdApi.UpdateNewChat -> {
                 val chat = `object`.chat
                 chatTitles[chat.id] = chat.title
+            }
+            is TdApi.UpdateFile -> {
+                val file = `object`.file
+                if (file.local.isDownloadingCompleted && !file.local.path.isNullOrBlank()) {
+                    val offerId = fileIdToOfferId[file.id]
+                    if (offerId != null) {
+                        OfferRepository.updateOfferImage(offerId, file.local.path)
+                    }
+                }
             }
             is TdApi.Error -> {
                 Log.e(TAG, "TDLib Error (${`object`.code}): ${`object`.message}")
@@ -247,8 +257,10 @@ class TelegramManager(private val context: Context) : Client.ResultHandler {
 
         if (!PriceParser.isOfferMatching(text)) return
 
-        val price = PriceParser.extractPrice(text)
+        val (price, originalPrice) = PriceParser.extractPrices(text)
         val coupon = PriceParser.extractCoupon(text)
+        val title = PriceParser.extractProductTitle(text)
+        val storeLink = PriceParser.extractStoreLink(text)
         val channelTitle = chatTitles[message.chatId] ?: "Canal Telegram"
         val channelUsername = chatUsernames[message.chatId]
 
@@ -261,29 +273,53 @@ class TelegramManager(private val context: Context) : Client.ResultHandler {
         val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
         val timestamp = dateFormat.format(Date(message.date * 1000L))
 
+        // Extrai foto direta ou foto do preview de link/loja
         var imagePath: String? = null
-        if (message.content is TdApi.MessagePhoto) {
-            val photo = (message.content as TdApi.MessagePhoto).photo
+        val photo: TdApi.Photo? = when (val content = message.content) {
+            is TdApi.MessagePhoto -> content.photo
+            is TdApi.MessageText -> when (val previewType = content.linkPreview?.type) {
+                is TdApi.LinkPreviewTypePhoto -> previewType.photo
+                is TdApi.LinkPreviewTypeArticle -> previewType.photo
+                is TdApi.LinkPreviewTypeApp -> previewType.photo
+                else -> null
+            }
+            else -> null
+        }
+
+        if (photo != null) {
             val largestSize = photo.sizes.maxByOrNull { it.photo.size }
             if (largestSize != null) {
                 val file = largestSize.photo
-                if (file.local.isDownloadingCompleted) {
+                if (file.local.isDownloadingCompleted && !file.local.path.isNullOrBlank()) {
                     imagePath = file.local.path
                 } else {
-                    client?.send(TdApi.DownloadFile(file.id, 1, 0, 0, true), null)
+                    fileIdToOfferId[file.id] = message.id
+                    client?.send(TdApi.DownloadFile(file.id, 32, 0, 0, true)) { res ->
+                        if (res is TdApi.File && res.local.isDownloadingCompleted && !res.local.path.isNullOrBlank()) {
+                            OfferRepository.updateOfferImage(message.id, res.local.path)
+                        }
+                    }
                 }
             }
         }
+
+        val discount = if (price != null && originalPrice != null && originalPrice > price) {
+            (((originalPrice - price) / originalPrice) * 100).toInt()
+        } else null
 
         val offer = Offer(
             id = message.id,
             channel = channelTitle,
             price = price,
+            originalPrice = originalPrice,
             link = link,
+            storeLink = storeLink,
             message = text,
             imagePath = imagePath,
             timestamp = timestamp,
-            coupon = coupon
+            coupon = coupon,
+            discountPercent = discount,
+            product = title
         )
 
         OfferRepository.addOffer(offer)
