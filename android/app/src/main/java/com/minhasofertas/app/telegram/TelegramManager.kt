@@ -373,8 +373,15 @@ class TelegramManager(private val context: Context) : Client.ResultHandler {
 
         OfferRepository.addOffer(offer)
 
-        if (OfferRepository.monitoringActive.value) {
-            TelegramMonitorService.notifyOffer(context, offer)
+        // Dispara notificação somente se houver filtro de alerta específico configurado pelo usuário
+        val customKeywords = ConfigManager.keywords.value
+        val maxPrice = ConfigManager.maxPriceAlert.value
+        if (OfferRepository.monitoringActive.value && (customKeywords.isNotEmpty() || maxPrice != null)) {
+            val matchesKeyword = customKeywords.isEmpty() || customKeywords.any { text.contains(it, ignoreCase = true) }
+            val matchesPrice = maxPrice == null || (price != null && price <= maxPrice)
+            if (matchesKeyword && matchesPrice) {
+                TelegramMonitorService.notifyOffer(context, offer)
+            }
         }
     }
 

@@ -42,7 +42,7 @@ class UserPreferences(context: Context) {
         set(value) = prefs.edit().putString("max_price_alert", if (value > 0) value.toString() else "").apply()
 
     var keywordsString: String
-        get() = prefs.getString("custom_keywords", AppConfig.DEFAULT_KEYWORDS.joinToString(",")) ?: ""
+        get() = prefs.getString("custom_keywords", "") ?: ""
         set(value) = prefs.edit().putString("custom_keywords", value).apply()
 
     var ignoreTermsString: String

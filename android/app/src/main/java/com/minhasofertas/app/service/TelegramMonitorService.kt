@@ -84,13 +84,16 @@ class TelegramMonitorService : Service() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
 
-                // Canal do serviço persistente em background
+                // Canal do serviço persistente em background (silencioso e sem interrupções)
                 val monitorChannel = NotificationChannel(
                     MONITOR_CHANNEL_ID,
                     "Serviço de Monitoramento",
-                    NotificationManager.IMPORTANCE_LOW
+                    NotificationManager.IMPORTANCE_MIN
                 ).apply {
                     description = "Mantém a escuta de novos posts no Telegram em segundo plano"
+                    setShowBadge(false)
+                    enableVibration(false)
+                    enableLights(false)
                 }
 
                 // Canal de alertas de novas ofertas com alta prioridade
@@ -139,11 +142,14 @@ class TelegramMonitorService : Service() {
         )
 
         return NotificationCompat.Builder(this, MONITOR_CHANNEL_ID)
-            .setContentTitle("Minhas Ofertas (Ativo)")
+            .setContentTitle("Minhas Ofertas")
             .setContentText(contentText)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setSilent(true)
+            .setShowWhen(false)
             .build()
     }
 }

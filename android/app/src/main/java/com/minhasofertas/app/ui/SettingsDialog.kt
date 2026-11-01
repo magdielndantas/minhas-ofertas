@@ -255,17 +255,26 @@ fun SettingsDialog(
 
                                 item {
                                     Text(
-                                        text = "Palavras-chave Monitoradas",
+                                        text = "Termos Monitorados (Filtro Ativo)",
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 14.sp,
                                         color = OnSurface
                                     )
-                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = if (keywords.isEmpty())
+                                            "Monitorando tudo: todas as promoções dos canais são exibidas no feed. Adicione termos para restringir ou clique nas sugestões abaixo."
+                                        else
+                                            "Apenas ofertas contendo algum dos termos abaixo serão capturadas no feed.",
+                                        fontSize = 11.sp,
+                                        color = OnSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         OutlinedTextField(
                                             value = newKeywordInput,
                                             onValueChange = { newKeywordInput = it },
-                                            placeholder = { Text("Nova palavra-chave...", fontSize = 12.sp) },
+                                            placeholder = { Text("Adicionar termo personalizado...", fontSize = 12.sp) },
                                             singleLine = true,
                                             shape = RoundedCornerShape(12.dp),
                                             modifier = Modifier.weight(1f)
@@ -274,8 +283,10 @@ fun SettingsDialog(
                                         FilledTonalButton(
                                             onClick = {
                                                 if (newKeywordInput.isNotBlank()) {
-                                                    val updated = keywords.toMutableList().apply { add(newKeywordInput.trim().lowercase()) }
-                                                    ConfigManager.updateKeywords(updated)
+                                                    val clean = newKeywordInput.trim().lowercase()
+                                                    if (!keywords.contains(clean)) {
+                                                        ConfigManager.updateKeywords(keywords + clean)
+                                                    }
                                                     newKeywordInput = ""
                                                 }
                                             },
@@ -284,24 +295,56 @@ fun SettingsDialog(
                                             Icon(Icons.Default.Add, contentDescription = null)
                                         }
                                     }
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    FlowRow(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        keywords.forEach { kw ->
-                                            InputChip(
-                                                selected = true,
-                                                onClick = {
-                                                    val updated = keywords.filter { it != kw }
-                                                    ConfigManager.updateKeywords(updated)
-                                                },
-                                                label = { Text(kw, fontSize = 11.sp) },
-                                                trailingIcon = {
-                                                    Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(12.dp))
-                                                }
-                                            )
+
+                                    if (keywords.isNotEmpty()) {
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        FlowRow(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            keywords.forEach { kw ->
+                                                InputChip(
+                                                    selected = true,
+                                                    onClick = {
+                                                        ConfigManager.updateKeywords(keywords.filter { it != kw })
+                                                    },
+                                                    label = { Text(kw, fontSize = 11.sp) },
+                                                    trailingIcon = {
+                                                        Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(12.dp))
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    // Seção de Sugestões de Termos
+                                    val availableSuggestions = ConfigManager.suggestedKeywords.filter { it !in keywords }
+                                    if (availableSuggestions.isNotEmpty()) {
+                                        Spacer(modifier = Modifier.height(14.dp))
+                                        Text(
+                                            text = "💡 Sugestões de termos populares (toque para adicionar):",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp,
+                                            color = Primary
+                                        )
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        FlowRow(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            availableSuggestions.forEach { suggestion ->
+                                                SuggestionChip(
+                                                    onClick = {
+                                                        ConfigManager.updateKeywords(keywords + suggestion)
+                                                    },
+                                                    label = { Text(suggestion, fontSize = 11.sp) },
+                                                    icon = {
+                                                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(12.dp))
+                                                    }
+                                                )
+                                            }
                                         }
                                     }
                                 }

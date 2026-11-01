@@ -171,7 +171,7 @@ object PriceParser {
 
     fun isOfferMatching(
         text: String,
-        keywords: List<String> = AppConfig.DEFAULT_KEYWORDS,
+        keywords: List<String> = emptyList(),
         ignoreTerms: List<String> = AppConfig.DEFAULT_IGNORE_TERMS,
         maxPrice: Double? = null
     ): Boolean {
@@ -182,8 +182,9 @@ object PriceParser {
             return false
         }
 
-        // 2. Verificar se contém palavras-chave
-        if (keywords.none { lower.contains(it.lowercase()) }) {
+        // 2. Se houver palavras-chave ativas configuradas, filtra por elas.
+        // Se a lista estiver vazia, aceita todas as ofertas dos canais por padrão.
+        if (keywords.isNotEmpty() && keywords.none { lower.contains(it.lowercase()) }) {
             return false
         }
 

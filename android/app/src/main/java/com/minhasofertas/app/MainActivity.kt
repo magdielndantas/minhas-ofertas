@@ -44,6 +44,13 @@ class MainActivity : ComponentActivity() {
                 val isMonitoring by OfferRepository.monitoringActive.collectAsState()
                 val authState by telegramManager.authState.collectAsState()
 
+                // Inicia monitoramento como padrão assim que autenticado
+                androidx.compose.runtime.LaunchedEffect(authState) {
+                    if (authState is AuthState.Ready && isMonitoring) {
+                        toggleMonitoringService(true)
+                    }
+                }
+
                 Crossfade(targetState = authState is AuthState.Ready, label = "ScreenTransition") { isReady ->
                     if (isReady) {
                         MainScreen(

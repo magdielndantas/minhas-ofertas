@@ -20,7 +20,7 @@ object OfferRepository {
     private val _offers = MutableStateFlow<List<Offer>>(emptyList())
     val offers = _offers.asStateFlow()
 
-    private val _monitoringActive = MutableStateFlow(false)
+    private val _monitoringActive = MutableStateFlow(true)
     val monitoringActive = _monitoringActive.asStateFlow()
 
     // Cache em memória de estatísticas de preços para renderização instantânea

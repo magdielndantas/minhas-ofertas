@@ -21,8 +21,10 @@ object ConfigManager {
     private val _channels = MutableStateFlow<List<ChannelEntity>>(emptyList())
     val channels = _channels.asStateFlow()
 
-    private val _keywords = MutableStateFlow<List<String>>(AppConfig.DEFAULT_KEYWORDS)
+    private val _keywords = MutableStateFlow<List<String>>(emptyList())
     val keywords = _keywords.asStateFlow()
+
+    val suggestedKeywords: List<String> = AppConfig.DEFAULT_KEYWORDS
 
     private val _ignoreTerms = MutableStateFlow<List<String>>(AppConfig.DEFAULT_IGNORE_TERMS)
     val ignoreTerms = _ignoreTerms.asStateFlow()
