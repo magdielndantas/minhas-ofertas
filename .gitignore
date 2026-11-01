@@ -35,3 +35,10 @@ Thumbs.db
 credentials.json
 session.session
 *.session
+
+
+# Android & Gradle
+android/**/build/
+android/.gradle/
+android/local.properties
+*.apk
