@@ -28,13 +28,42 @@ import com.minhasofertas.app.util.StorageManager
 import com.minhasofertas.app.util.StorageStats
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SettingsDialog(
     onDismiss: () -> Unit,
     onExportJson: () -> Unit,
     onImportJson: () -> Unit,
     onSyncTelegramChannels: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.94f)
+                .fillMaxHeight(0.85f),
+            shape = RoundedCornerShape(24.dp),
+            color = SurfaceContainerLowest,
+            tonalElevation = 8.dp
+        ) {
+            SettingsContent(
+                onExportJson = onExportJson,
+                onImportJson = onImportJson,
+                onSyncTelegramChannels = onSyncTelegramChannels,
+                onClose = onDismiss
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun SettingsContent(
+    onExportJson: () -> Unit,
+    onImportJson: () -> Unit,
+    onSyncTelegramChannels: () -> Unit,
+    onClose: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val channels by ConfigManager.channels.collectAsState()
@@ -48,47 +77,37 @@ fun SettingsDialog(
     var newIgnoreTermInput by remember { mutableStateOf("") }
     var maxPriceInput by remember { mutableStateOf(maxPriceAlert?.toString() ?: "") }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth(0.94f)
-                .fillMaxHeight(0.85f),
-            shape = RoundedCornerShape(24.dp),
-            color = SurfaceContainerLowest,
-            tonalElevation = 8.dp
-        ) {
-            Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize()) {
 
-                // Cabeçalho
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = null,
-                            tint = Primary,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = "Configurações",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = OnSurface
-                        )
-                    }
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Fechar", tint = OnSurfaceVariant)
-                    }
+        // Cabeçalho
+        if (onClose != null) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = null,
+                        tint = Primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Configurações",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = OnSurface
+                    )
                 }
+                IconButton(onClick = onClose) {
+                    Icon(Icons.Default.Close, contentDescription = "Fechar", tint = OnSurfaceVariant)
+                }
+            }
+        }
 
                 // Abas
                 TabRow(
@@ -564,6 +583,4 @@ fun SettingsDialog(
                     }
                 }
             }
-        }
-    }
 }
