@@ -66,6 +66,9 @@ class MainActivity : ComponentActivity() {
                             onSendCode = { code ->
                                 telegramManager.checkAuthCode(code)
                             },
+                            onResendCode = {
+                                telegramManager.resendAuthCode()
+                            },
                             onSendPassword = { pass ->
                                 telegramManager.checkPassword(pass)
                             }

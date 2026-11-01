@@ -44,6 +44,7 @@ fun OnboardingScreen(
     onConfigureApi: (Int, String) -> Unit,
     onSendPhoneNumber: (String) -> Unit,
     onSendCode: (String) -> Unit,
+    onResendCode: () -> Unit,
     onSendPassword: (String) -> Unit
 ) {
     val context = LocalContext.current
@@ -52,11 +53,13 @@ fun OnboardingScreen(
     var onboardingStep by remember { mutableStateOf(if (authState is AuthState.NeedApiCredentials) 0 else 3) }
     var apiIdInput by remember { mutableStateOf("") }
     var apiHashInput by remember { mutableStateOf("") }
-    var phoneNumber by remember { mutableStateOf("") }
+    var phoneNumber by remember { mutableStateOf("+55") }
     var code by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var isSubmitting by remember { mutableStateOf(false) }
 
     LaunchedEffect(authState) {
+        isSubmitting = false
         when (authState) {
             is AuthState.WaitPhoneNumber -> if (onboardingStep < 3) onboardingStep = 3
             is AuthState.WaitCode -> if (onboardingStep < 4) onboardingStep = 4
@@ -310,7 +313,7 @@ fun OnboardingScreen(
                                 )
                                 Spacer(modifier = Modifier.height(10.dp))
                                 Text(
-                                    text = "Formato com código do país e DDD (Exemplo: +5511999999999).",
+                                    text = "Informe seu número com código do país e DDD (Exemplo: +5511999999999 ou 11999999999).",
                                     fontSize = 14.sp,
                                     color = OnSurfaceVariant
                                 )
@@ -324,6 +327,26 @@ fun OnboardingScreen(
                                     shape = RoundedCornerShape(16.dp),
                                     modifier = Modifier.fillMaxWidth()
                                 )
+
+                                if (authState is AuthState.Initial || authState is AuthState.WaitParameters) {
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(start = 4.dp)
+                                    ) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            strokeWidth = 2.dp,
+                                            color = Primary
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "Conectando ao Telegram...",
+                                            fontSize = 13.sp,
+                                            color = OnSurfaceVariant
+                                        )
+                                    }
+                                }
                             }
 
                             4 -> {
@@ -351,13 +374,32 @@ fun OnboardingScreen(
                                     color = OnSurface,
                                     letterSpacing = (-0.5).sp
                                 )
-                                Spacer(modifier = Modifier.height(10.dp))
-                                Text(
-                                    text = "Digite o código que você acabou de receber no app oficial do Telegram.",
-                                    fontSize = 14.sp,
-                                    color = OnSurfaceVariant
-                                )
-                                Spacer(modifier = Modifier.height(20.dp))
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                val deliveryText = (authState as? AuthState.WaitCode)?.deliveryDescription
+                                    ?: "Verifique seu app oficial do Telegram ou SMS"
+
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = PrimaryContainer.copy(alpha = 0.35f)),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.Info, contentDescription = null, tint = Primary, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = deliveryText,
+                                            fontWeight = FontWeight.Medium,
+                                            fontSize = 13.sp,
+                                            color = OnSurface
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(16.dp))
                                 OutlinedTextField(
                                     value = code,
                                     onValueChange = { code = it },
@@ -367,6 +409,19 @@ fun OnboardingScreen(
                                     shape = RoundedCornerShape(16.dp),
                                     modifier = Modifier.fillMaxWidth()
                                 )
+
+                                Spacer(modifier = Modifier.height(8.dp))
+                                TextButton(
+                                    onClick = { onResendCode() },
+                                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                                ) {
+                                    Text(
+                                        text = "Não recebeu o código? Reenviar",
+                                        color = Primary,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
 
                             5 -> {
@@ -449,22 +504,26 @@ fun OnboardingScreen(
                                 }
                             }
                             3 -> {
-                                if (phoneNumber.isNotBlank()) {
+                                if (phoneNumber.isNotBlank() && !isSubmitting) {
+                                    isSubmitting = true
                                     onSendPhoneNumber(phoneNumber.trim())
                                 }
                             }
                             4 -> {
-                                if (code.isNotBlank()) {
+                                if (code.isNotBlank() && !isSubmitting) {
+                                    isSubmitting = true
                                     onSendCode(code.trim())
                                 }
                             }
                             5 -> {
-                                if (password.isNotBlank()) {
+                                if (password.isNotBlank() && !isSubmitting) {
+                                    isSubmitting = true
                                     onSendPassword(password)
                                 }
                             }
                         }
                     },
+                    enabled = !isSubmitting,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
@@ -474,25 +533,33 @@ fun OnboardingScreen(
                         contentColor = OnPrimary
                     )
                 ) {
-                    Text(
-                        text = when (onboardingStep) {
-                            0 -> "Começar Agora"
-                            1 -> "Entendi, Inserir Credenciais"
-                            2 -> "Salvar e Continuar"
-                            3 -> "Enviar Código"
-                            4 -> "Validar Código"
-                            5 -> "Concluir Conexão"
-                            else -> "Avançar"
-                        },
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
+                    if (isSubmitting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(22.dp),
+                            strokeWidth = 2.5.dp,
+                            color = OnPrimary
+                        )
+                    } else {
+                        Text(
+                            text = when (onboardingStep) {
+                                0 -> "Começar Agora"
+                                1 -> "Entendi, Inserir Credenciais"
+                                2 -> "Salvar e Continuar"
+                                3 -> "Enviar Código"
+                                4 -> "Validar Código"
+                                5 -> "Concluir Conexão"
+                                else -> "Avançar"
+                            },
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
         }

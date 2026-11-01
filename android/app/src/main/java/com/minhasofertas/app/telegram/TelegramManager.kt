@@ -1,6 +1,7 @@
 package com.minhasofertas.app.telegram
 
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import com.minhasofertas.app.data.AppConfig
 import com.minhasofertas.app.data.Offer
@@ -47,14 +48,22 @@ class TelegramManager(private val context: Context) : Client.ResultHandler {
     }
 
     private fun initClient() {
+        if (client != null) {
+            try {
+                client?.send(TdApi.Close(), null)
+            } catch (e: Exception) {
+                Log.w(TAG, "Aviso ao encerrar cliente anterior", e)
+            }
+            client = null
+        }
         try {
             Client.execute(TdApi.SetLogVerbosityLevel(1))
             client = Client.create(this, { e ->
                 Log.e(TAG, "Exceção no TDLib: ${e.message}")
-                _authState.value = AuthState.Error(e.message ?: "Erro no cliente TDLib")
+                _authState.value = AuthState.Error(translateTdlibError(e.message ?: "Erro no cliente TDLib"))
             }, { t ->
                 Log.e(TAG, "Erro crítico no TDLib", t)
-                _authState.value = AuthState.Error(t.message ?: "Erro crítico no TDLib")
+                _authState.value = AuthState.Error(translateTdlibError(t.message ?: "Erro crítico no TDLib"))
             })
         } catch (e: Exception) {
             Log.e(TAG, "Falha ao criar cliente TDLib", e)
@@ -92,6 +101,9 @@ class TelegramManager(private val context: Context) : Client.ResultHandler {
                 val filesDir = File(context.filesDir, "tdlib_files")
                 if (!filesDir.exists()) filesDir.mkdirs()
 
+                val deviceModel = if (!Build.MODEL.isNullOrBlank()) Build.MODEL else "Android Device"
+                val systemVersion = "Android " + (Build.VERSION.RELEASE ?: "10")
+
                 val parameters = TdApi.SetTdlibParameters(
                     false,                          // useTestDc
                     tdDir.absolutePath,             // databaseDirectory
@@ -104,15 +116,15 @@ class TelegramManager(private val context: Context) : Client.ResultHandler {
                     userPreferences.apiId,          // apiId configurado pelo usuário
                     userPreferences.apiHash,        // apiHash configurado pelo usuário
                     "pt-br",                        // systemLanguageCode
-                    "Android Device",               // deviceModel
-                    "Android",                      // systemVersion
-                    "1.0.4"                         // applicationVersion
+                    deviceModel,                    // deviceModel
+                    systemVersion,                  // systemVersion
+                    "1.0.9"                         // applicationVersion
                 )
 
                 client?.send(parameters) { result ->
                     if (result is TdApi.Error) {
                         Log.e(TAG, "Erro ao enviar SetTdlibParameters: ${result.message}")
-                        _authState.value = AuthState.Error("Erro nos parâmetros: ${result.message}")
+                        _authState.value = AuthState.Error("Erro nos parâmetros: " + translateTdlibError(result.message))
                     }
                 }
             }
@@ -120,7 +132,17 @@ class TelegramManager(private val context: Context) : Client.ResultHandler {
                 _authState.value = AuthState.WaitPhoneNumber
             }
             is TdApi.AuthorizationStateWaitCode -> {
-                _authState.value = AuthState.WaitCode
+                val info = state.codeInfo
+                val deliveryDescription = when (info.type) {
+                    is TdApi.AuthenticationCodeTypeTelegramMessage -> "Enviado no chat oficial do aplicativo Telegram"
+                    is TdApi.AuthenticationCodeTypeSms -> "Enviado por SMS para o seu celular"
+                    is TdApi.AuthenticationCodeTypeCall -> "O Telegram fará uma ligação telefônica"
+                    is TdApi.AuthenticationCodeTypeFlashCall -> "O Telegram fará uma chamada rápida"
+                    is TdApi.AuthenticationCodeTypeMissedCall -> "Verificação por chamada perdida"
+                    else -> "Verifique seu app do Telegram ou caixa de SMS"
+                }
+                Log.d(TAG, "WaitCode delivery: $deliveryDescription, timeout: ${info.timeout}")
+                _authState.value = AuthState.WaitCode(deliveryDescription, info.timeout)
             }
             is TdApi.AuthorizationStateWaitPassword -> {
                 _authState.value = AuthState.WaitPassword
@@ -139,21 +161,58 @@ class TelegramManager(private val context: Context) : Client.ResultHandler {
         }
     }
 
+    private fun sanitizePhoneNumber(raw: String): String {
+        val trimmed = raw.trim().replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+        val digits = trimmed.filter { it.isDigit() }
+        return when {
+            trimmed.startsWith("+55") -> "+$digits"
+            digits.startsWith("55") && (digits.length == 12 || digits.length == 13) -> "+$digits"
+            digits.length == 10 || digits.length == 11 -> "+55$digits"
+            trimmed.startsWith("+") -> "+$digits"
+            else -> "+$digits"
+        }
+    }
+
+    private fun translateTdlibError(error: String): String {
+        return when {
+            error.contains("PHONE_NUMBER_INVALID", ignoreCase = true) -> "Número de telefone inválido. Verifique o DDD e o código do país (+55)."
+            error.contains("PHONE_CODE_INVALID", ignoreCase = true) -> "Código de verificação incorreto."
+            error.contains("PHONE_CODE_EXPIRED", ignoreCase = true) -> "O código expirou. Solicite um novo código."
+            error.contains("PASSWORD_HASH_INVALID", ignoreCase = true) -> "Senha de verificação em duas etapas incorreta."
+            error.contains("FLOOD_WAIT", ignoreCase = true) -> "Muitas tentativas em pouco tempo. Aguarde alguns minutos antes de tentar novamente."
+            error.contains("API_ID_INVALID", ignoreCase = true) -> "API ID ou API HASH inválidos. Confira em my.telegram.org."
+            error.contains("PHONE_NUMBER_BANNED", ignoreCase = true) -> "Este número foi bloqueado pelo Telegram."
+            error.contains("Unexpected client request", ignoreCase = true) -> "Aguardando conexão com o Telegram. Tente novamente em instantes."
+            else -> error
+        }
+    }
+
     fun setPhoneNumber(phoneNumber: String) {
+        val cleanPhone = sanitizePhoneNumber(phoneNumber)
+        Log.d(TAG, "Enviando telefone formatado: $cleanPhone (original: $phoneNumber)")
         val settings = TdApi.PhoneNumberAuthenticationSettings()
-        client?.send(TdApi.SetAuthenticationPhoneNumber(phoneNumber, settings)) { result ->
+        client?.send(TdApi.SetAuthenticationPhoneNumber(cleanPhone, settings)) { result ->
             if (result is TdApi.Error) {
                 Log.e(TAG, "Erro ao enviar telefone: ${result.message}")
-                _authState.value = AuthState.Error(result.message)
+                _authState.value = AuthState.Error(translateTdlibError(result.message))
+            }
+        }
+    }
+
+    fun resendAuthCode() {
+        client?.send(TdApi.ResendAuthenticationCode()) { result ->
+            if (result is TdApi.Error) {
+                Log.e(TAG, "Erro ao reenviar código: ${result.message}")
+                _authState.value = AuthState.Error(translateTdlibError(result.message))
             }
         }
     }
 
     fun checkAuthCode(code: String) {
-        client?.send(TdApi.CheckAuthenticationCode(code)) { result ->
+        client?.send(TdApi.CheckAuthenticationCode(code.trim())) { result ->
             if (result is TdApi.Error) {
                 Log.e(TAG, "Erro ao validar código: ${result.message}")
-                _authState.value = AuthState.Error(result.message)
+                _authState.value = AuthState.Error(translateTdlibError(result.message))
             }
         }
     }
@@ -162,7 +221,7 @@ class TelegramManager(private val context: Context) : Client.ResultHandler {
         client?.send(TdApi.CheckAuthenticationPassword(password)) { result ->
             if (result is TdApi.Error) {
                 Log.e(TAG, "Erro na senha 2FA: ${result.message}")
-                _authState.value = AuthState.Error(result.message)
+                _authState.value = AuthState.Error(translateTdlibError(result.message))
             }
         }
     }
