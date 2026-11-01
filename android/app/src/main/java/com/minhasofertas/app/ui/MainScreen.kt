@@ -51,11 +51,11 @@ fun MainScreen(
                 title = {
                     Column {
                         Text(
-                            text = "DEAL.EDIT",
+                            text = "Minhas Ofertas",
                             fontWeight = FontWeight.Black,
                             fontSize = 20.sp,
                             color = Primary,
-                            letterSpacing = (-1).sp
+                            letterSpacing = (-0.5).sp
                         )
                         Text(
                             text = if (isMonitoring) "Ao vivo • Monitorando 14 canais" else "Pausado",

@@ -86,11 +86,11 @@ fun OnboardingScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "DEAL.EDIT",
+                    text = "Minhas Ofertas",
                     fontWeight = FontWeight.Black,
                     fontSize = 22.sp,
                     color = Primary,
-                    letterSpacing = (-1).sp
+                    letterSpacing = (-0.5).sp
                 )
                 // Indicador de Passos
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
