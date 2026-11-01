@@ -14,11 +14,14 @@ import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import com.minhasofertas.app.data.OfferRepository
 import com.minhasofertas.app.service.TelegramMonitorService
+import com.minhasofertas.app.telegram.TelegramManager
 import com.minhasofertas.app.ui.MainScreen
 import com.minhasofertas.app.ui.theme.AppColorScheme
 import com.minhasofertas.app.ui.theme.AppTypography
 
 class MainActivity : ComponentActivity() {
+
+    private lateinit var telegramManager: TelegramManager
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -27,6 +30,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        telegramManager = TelegramManager(applicationContext)
         checkNotificationPermission()
 
         setContent {
@@ -36,12 +40,23 @@ class MainActivity : ComponentActivity() {
             ) {
                 val offers by OfferRepository.offers.collectAsState()
                 val isMonitoring by OfferRepository.monitoringActive.collectAsState()
+                val authState by telegramManager.authState.collectAsState()
 
                 MainScreen(
                     offers = offers,
                     isMonitoring = isMonitoring,
+                    authState = authState,
                     onToggleMonitoring = {
                         toggleMonitoringService(!isMonitoring)
+                    },
+                    onSendPhoneNumber = { phone ->
+                        telegramManager.setPhoneNumber(phone)
+                    },
+                    onSendCode = { code ->
+                        telegramManager.checkAuthCode(code)
+                    },
+                    onSendPassword = { pass ->
+                        telegramManager.checkPassword(pass)
                     }
                 )
             }
@@ -71,5 +86,10 @@ class MainActivity : ComponentActivity() {
         } else {
             stopService(intent)
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        telegramManager.close()
     }
 }

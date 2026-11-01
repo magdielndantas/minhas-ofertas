@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.minhasofertas.app.data.Offer
+import com.minhasofertas.app.telegram.AuthState
 import com.minhasofertas.app.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -31,7 +33,11 @@ import com.minhasofertas.app.ui.theme.*
 fun MainScreen(
     offers: List<Offer>,
     isMonitoring: Boolean,
-    onToggleMonitoring: () -> Unit
+    authState: AuthState,
+    onToggleMonitoring: () -> Unit,
+    onSendPhoneNumber: (String) -> Unit,
+    onSendCode: (String) -> Unit,
+    onSendPassword: (String) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
 
@@ -42,6 +48,14 @@ fun MainScreen(
                     it.channel.contains(searchQuery, ignoreCase = true)
         }
     }
+
+    // Modal de Login/Configuração do Telegram
+    AuthDialog(
+        authState = authState,
+        onSendPhoneNumber = onSendPhoneNumber,
+        onSendCode = onSendCode,
+        onSendPassword = onSendPassword
+    )
 
     Scaffold(
         topBar = {
@@ -113,7 +127,11 @@ fun MainScreen(
                             color = OnSurface
                         )
                         Text(
-                            text = if (isMonitoring) "Recebendo promoções dos canais configurados" else "Toque no ícone acima para iniciar",
+                            text = if (authState == AuthState.Ready) {
+                                if (isMonitoring) "Recebendo promoções dos canais configurados" else "Toque no ícone acima para iniciar"
+                            } else {
+                                "Necessário conectar conta do Telegram"
+                            },
                             fontSize = 12.sp,
                             color = OnSurfaceVariant
                         )
@@ -285,7 +303,7 @@ fun OfferCard(offer: Offer) {
                         Text("Ver Oferta", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.width(4.dp))
                         Icon(
-                            Icons.Default.ArrowForward,
+                            Icons.AutoMirrored.Filled.ArrowForward,
                             contentDescription = null,
                             modifier = Modifier.size(14.dp)
                         )
