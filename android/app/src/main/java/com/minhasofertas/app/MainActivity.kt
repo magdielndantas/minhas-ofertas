@@ -34,6 +34,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         telegramManager = TelegramManager(applicationContext)
+        TelegramMonitorService.createChannels(applicationContext)
         checkNotificationPermission()
 
         setContent {

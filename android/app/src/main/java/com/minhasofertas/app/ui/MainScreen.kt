@@ -287,11 +287,9 @@ fun ModernGroupedOfferCard(offer: GroupedOffer) {
                     .background(SurfaceContainerLow)
             ) {
                 if (!offer.imagePath.isNullOrBlank()) {
-                    val imageFile = File(offer.imagePath)
-                    val model = if (imageFile.exists()) imageFile else offer.imagePath
                     AsyncImage(
                         model = ImageRequest.Builder(context)
-                            .data(model)
+                            .data(File(offer.imagePath))
                             .crossfade(true)
                             .build(),
                         contentDescription = offer.title,

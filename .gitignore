@@ -42,3 +42,6 @@ android/**/build/
 android/.gradle/
 android/local.properties
 *.apk
+
+# Agents & Teamwork
+.agents/

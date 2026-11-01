@@ -1,5 +1,8 @@
 package com.minhasofertas.app.data
 
+import androidx.compose.runtime.Immutable
+
+@Immutable
 data class Offer(
     val id: Long = 0,
     val channel: String,
@@ -15,6 +18,7 @@ data class Offer(
     val product: String? = null
 )
 
+@Immutable
 data class GroupedOffer(
     val groupKey: String,
     val title: String,
@@ -29,6 +33,7 @@ data class GroupedOffer(
     val latestTimestamp: String
 )
 
+@Immutable
 data class OfferSource(
     val channel: String,
     val price: Double?,

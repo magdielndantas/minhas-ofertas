@@ -1,5 +1,6 @@
 package com.minhasofertas.app.service
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -7,37 +8,117 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.minhasofertas.app.MainActivity
+import com.minhasofertas.app.data.Offer
 import com.minhasofertas.app.data.OfferRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
+import java.util.Locale
 
 class TelegramMonitorService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
-    private val CHANNEL_ID = "monitor_channel"
-    private val NOTIF_ID = 1001
+
+    companion object {
+        const val MONITOR_CHANNEL_ID = "monitor_channel"
+        const val OFFERS_CHANNEL_ID = "offers_channel"
+        private const val FOREGROUND_NOTIF_ID = 1001
+
+        fun notifyOffer(context: Context, offer: Offer) {
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+
+            // Validação de permissão para Android 13+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                if (ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.POST_NOTIFICATIONS
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    return
+                }
+            }
+
+            // Garante que o canal de ofertas esteja criado
+            createChannels(context)
+
+            val intent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+            val pendingIntent = PendingIntent.getActivity(
+                context,
+                (offer.id % Int.MAX_VALUE).toInt(),
+                intent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+
+            val priceText = offer.price?.let { " por R$ %.2f".format(Locale.GERMAN, it) } ?: ""
+            val discountText = offer.discountPercent?.let { " (-$it% OFF)" } ?: ""
+            val couponText = offer.coupon?.let { " • Cupom: $it" } ?: ""
+            val productTitle = offer.product ?: "Oferta detectada"
+
+            val notification = NotificationCompat.Builder(context, OFFERS_CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle("🔥 $productTitle$priceText$discountText")
+                .setContentText("${offer.channel}$couponText")
+                .setStyle(
+                    NotificationCompat.BigTextStyle()
+                        .bigText("${offer.message}\n$couponText")
+                )
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setDefaults(NotificationCompat.DEFAULT_ALL)
+                .build()
+
+            manager.notify((offer.id % 100000).toInt(), notification)
+        }
+
+        fun createChannels(context: Context) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+
+                // Canal do serviço persistente em background
+                val monitorChannel = NotificationChannel(
+                    MONITOR_CHANNEL_ID,
+                    "Serviço de Monitoramento",
+                    NotificationManager.IMPORTANCE_LOW
+                ).apply {
+                    description = "Mantém a escuta de novos posts no Telegram em segundo plano"
+                }
+
+                // Canal de alertas de novas ofertas com alta prioridade
+                val offersChannel = NotificationChannel(
+                    OFFERS_CHANNEL_ID,
+                    "Alertas de Novas Ofertas",
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = "Notificações instantâneas de novas promoções e cupons encontrados"
+                    enableVibration(true)
+                    setShowBadge(true)
+                }
+
+                manager.createNotificationChannel(monitorChannel)
+                manager.createNotificationChannel(offersChannel)
+            }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
-        createNotificationChannel()
+        createChannels(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val notification = buildForegroundNotification("Monitorando canais de ofertas em tempo real...")
-        startForeground(NOTIF_ID, notification)
+        startForeground(FOREGROUND_NOTIF_ID, notification)
         OfferRepository.setMonitoringStatus(true)
-
-        serviceScope.launch {
-            // Monitoramento e integração com TDLib
-        }
-
         return START_STICKY
     }
 
@@ -49,20 +130,6 @@ class TelegramMonitorService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Monitor de Ofertas",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Serviço em segundo plano para escuta de canais do Telegram"
-            }
-            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            manager.createNotificationChannel(channel)
-        }
-    }
-
     private fun buildForegroundNotification(contentText: String): Notification {
         val pendingIntent = PendingIntent.getActivity(
             this,
@@ -71,23 +138,12 @@ class TelegramMonitorService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        return NotificationCompat.Builder(this, MONITOR_CHANNEL_ID)
             .setContentTitle("Minhas Ofertas (Ativo)")
             .setContentText(contentText)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .build()
-    }
-
-    fun notifyNewOffer(title: String, price: String) {
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val notif = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("🔥 Nova Oferta Encontrada: $price")
-            .setContentText(title)
-            .setSmallIcon(android.R.drawable.ic_input_add)
-            .setAutoCancel(true)
-            .build()
-        manager.notify((System.currentTimeMillis() % 10000).toInt(), notif)
     }
 }

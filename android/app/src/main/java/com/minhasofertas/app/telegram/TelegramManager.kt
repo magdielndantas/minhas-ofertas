@@ -8,6 +8,7 @@ import com.minhasofertas.app.data.Offer
 import com.minhasofertas.app.data.OfferRepository
 import com.minhasofertas.app.data.PriceParser
 import com.minhasofertas.app.data.UserPreferences
+import com.minhasofertas.app.service.TelegramMonitorService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -249,9 +250,39 @@ class TelegramManager(private val context: Context) : Client.ResultHandler {
     }
 
     private fun handleNewMessage(message: TdApi.Message) {
-        val text = when (val content = message.content) {
-            is TdApi.MessageText -> content.text.text
-            is TdApi.MessagePhoto -> content.caption.text
+        val (text, entityUrls) = when (val content = message.content) {
+            is TdApi.MessageText -> {
+                val urls = content.text.entities?.mapNotNull { entity ->
+                    when (val type = entity.type) {
+                        is TdApi.TextEntityTypeTextUrl -> type.url
+                        is TdApi.TextEntityTypeUrl -> {
+                            val start = entity.offset
+                            val end = entity.offset + entity.length
+                            if (start >= 0 && end <= content.text.text.length && start < end) {
+                                content.text.text.substring(start, end)
+                            } else null
+                        }
+                        else -> null
+                    }
+                } ?: emptyList()
+                content.text.text to urls
+            }
+            is TdApi.MessagePhoto -> {
+                val urls = content.caption.entities?.mapNotNull { entity ->
+                    when (val type = entity.type) {
+                        is TdApi.TextEntityTypeTextUrl -> type.url
+                        is TdApi.TextEntityTypeUrl -> {
+                            val start = entity.offset
+                            val end = entity.offset + entity.length
+                            if (start >= 0 && end <= content.caption.text.length && start < end) {
+                                content.caption.text.substring(start, end)
+                            } else null
+                        }
+                        else -> null
+                    }
+                } ?: emptyList()
+                content.caption.text to urls
+            }
             else -> null
         } ?: return
 
@@ -260,7 +291,7 @@ class TelegramManager(private val context: Context) : Client.ResultHandler {
         val (price, originalPrice) = PriceParser.extractPrices(text)
         val coupon = PriceParser.extractCoupon(text)
         val title = PriceParser.extractProductTitle(text)
-        val storeLink = PriceParser.extractStoreLink(text)
+        val storeLink = PriceParser.extractStoreLink(text, entityUrls)
         val channelTitle = chatTitles[message.chatId] ?: "Canal Telegram"
         val channelUsername = chatUsernames[message.chatId]
 
@@ -323,6 +354,10 @@ class TelegramManager(private val context: Context) : Client.ResultHandler {
         )
 
         OfferRepository.addOffer(offer)
+
+        if (OfferRepository.monitoringActive.value) {
+            TelegramMonitorService.notifyOffer(context, offer)
+        }
     }
 
     fun close() {
