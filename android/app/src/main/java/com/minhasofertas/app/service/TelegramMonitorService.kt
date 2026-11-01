@@ -31,7 +31,7 @@ class TelegramMonitorService : Service() {
         const val OFFERS_CHANNEL_ID = "offers_channel"
         private const val FOREGROUND_NOTIF_ID = 1001
 
-        fun notifyOffer(context: Context, offer: Offer) {
+        fun notifyOffer(context: Context, offer: Offer, isTargetPriceAlert: Boolean = false) {
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
 
             // Validação de permissão para Android 13+
@@ -62,10 +62,11 @@ class TelegramMonitorService : Service() {
             val discountText = offer.discountPercent?.let { " (-$it% OFF)" } ?: ""
             val couponText = offer.coupon?.let { " • Cupom: $it" } ?: ""
             val productTitle = offer.product ?: "Oferta detectada"
+            val titlePrefix = if (isTargetPriceAlert) "🎯 PREÇO ALVO ALCANÇADO: " else "🔥 "
 
-            val notification = NotificationCompat.Builder(context, OFFERS_CHANNEL_ID)
+            val notifBuilder = NotificationCompat.Builder(context, OFFERS_CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle("🔥 $productTitle$priceText$discountText")
+                .setContentTitle("$titlePrefix$productTitle$priceText$discountText")
                 .setContentText("${offer.channel}$couponText")
                 .setStyle(
                     NotificationCompat.BigTextStyle()
@@ -75,9 +76,45 @@ class TelegramMonitorService : Service() {
                 .setAutoCancel(true)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setDefaults(NotificationCompat.DEFAULT_ALL)
-                .build()
 
-            manager.notify((offer.id % 100000).toInt(), notification)
+            // Ação 1: Abrir Oferta na Loja / Canal
+            val targetUrl = offer.storeLink ?: offer.link
+            if (targetUrl.startsWith("http")) {
+                val openIntent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(targetUrl)).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                val openPendingIntent = PendingIntent.getActivity(
+                    context,
+                    ((offer.id + 1) % Int.MAX_VALUE).toInt(),
+                    openIntent,
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                )
+                notifBuilder.addAction(
+                    android.R.drawable.ic_menu_view,
+                    "Abrir Loja",
+                    openPendingIntent
+                )
+            }
+
+            // Ação 2: Copiar Cupom com um clique na notificação
+            if (!offer.coupon.isNullOrBlank()) {
+                val copyIntent = Intent(context, NotificationActionReceiver::class.java).apply {
+                    putExtra("coupon", offer.coupon)
+                }
+                val copyPendingIntent = PendingIntent.getBroadcast(
+                    context,
+                    ((offer.id + 2) % Int.MAX_VALUE).toInt(),
+                    copyIntent,
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                )
+                notifBuilder.addAction(
+                    android.R.drawable.ic_menu_save,
+                    "Copiar Cupom",
+                    copyPendingIntent
+                )
+            }
+
+            manager.notify((offer.id % 100000).toInt(), notifBuilder.build())
         }
 
         fun createChannels(context: Context) {

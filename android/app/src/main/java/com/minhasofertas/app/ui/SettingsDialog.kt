@@ -24,6 +24,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.minhasofertas.app.data.ConfigManager
 import com.minhasofertas.app.ui.theme.*
+import com.minhasofertas.app.util.StorageManager
+import com.minhasofertas.app.util.StorageStats
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -106,7 +109,7 @@ fun SettingsDialog(
                     Tab(
                         selected = selectedTab == 2,
                         onClick = { selectedTab = 2 },
-                        text = { Text("Backup", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
+                        text = { Text("Backup & Disco", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
                     )
                 }
 
@@ -405,57 +408,156 @@ fun SettingsDialog(
                         }
 
                         2 -> {
-                            // Aba 3: Backup & Restauração JSON
-                            Column(
+                            // Aba 3: Backup & Armazenamento em Disco
+                            val coroutineScope = rememberCoroutineScope()
+                            var storageStats by remember { mutableStateOf<StorageStats?>(null) }
+                            var isClearingCache by remember { mutableStateOf(false) }
+
+                            LaunchedEffect(Unit) {
+                                storageStats = StorageManager.getStorageStats(context)
+                            }
+
+                            LazyColumn(
                                 modifier = Modifier.fillMaxSize(),
-                                verticalArrangement = Arrangement.Center,
-                                horizontalAlignment = Alignment.CenterHorizontally
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(18.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.CloudSync,
-                                    contentDescription = null,
-                                    tint = Primary,
-                                    modifier = Modifier.size(64.dp)
-                                )
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Text(
-                                    text = "Backup On-Device de Configurações",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 16.sp,
-                                    color = OnSurface
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    text = "Exporte ou importe a lista completa de canais, termos ignorados e palavras-chave em formato JSON.",
-                                    fontSize = 12.sp,
-                                    color = OnSurfaceVariant,
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                    modifier = Modifier.padding(horizontal = 20.dp)
-                                )
+                                item {
+                                    Icon(
+                                        imageVector = Icons.Default.CloudSync,
+                                        contentDescription = null,
+                                        tint = Primary,
+                                        modifier = Modifier.size(52.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Text(
+                                        text = "Backup On-Device de Configurações",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp,
+                                        color = OnSurface
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Exporte ou importe a lista completa de canais, termos e palavras-chave em formato JSON.",
+                                        fontSize = 11.sp,
+                                        color = OnSurfaceVariant,
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                        modifier = Modifier.padding(horizontal = 16.dp)
+                                    )
 
-                                Spacer(modifier = Modifier.height(28.dp))
+                                    Spacer(modifier = Modifier.height(16.dp))
 
-                                Button(
-                                    onClick = onExportJson,
-                                    shape = RoundedCornerShape(14.dp),
-                                    modifier = Modifier.fillMaxWidth(0.8f),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Primary)
-                                ) {
-                                    Icon(Icons.Default.FileUpload, contentDescription = null)
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Exportar Arquivo (.json)", fontWeight = FontWeight.Bold)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Button(
+                                            onClick = onExportJson,
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.weight(1f),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Primary)
+                                        ) {
+                                            Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Exportar", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        }
+
+                                        OutlinedButton(
+                                            onClick = onImportJson,
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Importar", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
                                 }
 
-                                Spacer(modifier = Modifier.height(12.dp))
+                                item {
+                                    Divider(color = OutlineVariant.copy(alpha = 0.3f))
+                                }
 
-                                OutlinedButton(
-                                    onClick = onImportJson,
-                                    shape = RoundedCornerShape(14.dp),
-                                    modifier = Modifier.fillMaxWidth(0.8f)
-                                ) {
-                                    Icon(Icons.Default.FileDownload, contentDescription = null)
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Importar Arquivo (.json)", fontWeight = FontWeight.Bold)
+                                item {
+                                    // Gestão de Armazenamento TDLib e Cache
+                                    Surface(
+                                        shape = RoundedCornerShape(16.dp),
+                                        color = SurfaceContainerLow,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Column(modifier = Modifier.padding(16.dp)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Storage,
+                                                    contentDescription = null,
+                                                    tint = Primary,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = "Uso de Armazenamento Local",
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 14.sp,
+                                                    color = OnSurface
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.height(10.dp))
+
+                                            val stats = storageStats
+                                            if (stats != null) {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween
+                                                ) {
+                                                    Text("Imagens TDLib:", fontSize = 12.sp, color = OnSurfaceVariant)
+                                                    Text("${stats.mediaCacheSizeMb} MB", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = OnSurface)
+                                                }
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween
+                                                ) {
+                                                    Text("Cache do Aplicativo:", fontSize = 12.sp, color = OnSurfaceVariant)
+                                                    Text("${stats.appCacheSizeMb} MB", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = OnSurface)
+                                                }
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween
+                                                ) {
+                                                    Text("Banco de Dados Room:", fontSize = 12.sp, color = OnSurfaceVariant)
+                                                    Text("${stats.databaseSizeMb} MB", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = OnSurface)
+                                                }
+                                            } else {
+                                                Text("Calculando espaço em disco...", fontSize = 11.sp, color = OnSurfaceVariant)
+                                            }
+
+                                            Spacer(modifier = Modifier.height(16.dp))
+
+                                            OutlinedButton(
+                                                onClick = {
+                                                    coroutineScope.launch {
+                                                        isClearingCache = true
+                                                        val freedBytes = StorageManager.clearMediaCache(context)
+                                                        val freedMb = String.format("%.2f", freedBytes / (1024.0 * 1024.0))
+                                                        storageStats = StorageManager.getStorageStats(context)
+                                                        isClearingCache = false
+                                                        Toast.makeText(context, "$freedMb MB liberados!", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                },
+                                                shape = RoundedCornerShape(12.dp),
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Icon(Icons.Default.CleaningServices, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = if (isClearingCache) "Limpando..." else "Limpar Cache de Imagens",
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 12.sp
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

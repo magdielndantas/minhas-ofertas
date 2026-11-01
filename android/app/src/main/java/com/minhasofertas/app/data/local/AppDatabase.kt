@@ -6,8 +6,13 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [OfferEntity::class, PriceHistoryEntity::class, ChannelEntity::class],
-    version = 3,
+    entities = [
+        OfferEntity::class,
+        PriceHistoryEntity::class,
+        ChannelEntity::class,
+        WatchlistEntity::class
+    ],
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -15,6 +20,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun offerDao(): OfferDao
     abstract fun priceHistoryDao(): PriceHistoryDao
     abstract fun channelDao(): ChannelDao
+    abstract fun watchlistDao(): WatchlistDao
 
     companion object {
         @Volatile

@@ -373,14 +373,21 @@ class TelegramManager(private val context: Context) : Client.ResultHandler {
 
         OfferRepository.addOffer(offer)
 
-        // Dispara notificação somente se houver filtro de alerta específico configurado pelo usuário
-        val customKeywords = ConfigManager.keywords.value
-        val maxPrice = ConfigManager.maxPriceAlert.value
-        if (OfferRepository.monitoringActive.value && (customKeywords.isNotEmpty() || maxPrice != null)) {
-            val matchesKeyword = customKeywords.isEmpty() || customKeywords.any { text.contains(it, ignoreCase = true) }
-            val matchesPrice = maxPrice == null || (price != null && price <= maxPrice)
-            if (matchesKeyword && matchesPrice) {
-                TelegramMonitorService.notifyOffer(context, offer)
+        // 1. Alerta prioritário se o produto estiver nos Favoritos (Watchlist) e atingir o preço alvo
+        val groupKey = OfferRepository.computeGroupKey(offer)
+        val watchlistItem = OfferRepository.getWatchlistItem(groupKey)
+        if (watchlistItem != null && offer.price != null && watchlistItem.targetPrice != null && offer.price <= watchlistItem.targetPrice) {
+            TelegramMonitorService.notifyOffer(context, offer, isTargetPriceAlert = true)
+        } else {
+            // 2. Dispara notificação somente se houver filtro de alerta específico configurado pelo usuário
+            val customKeywords = ConfigManager.keywords.value
+            val maxPrice = ConfigManager.maxPriceAlert.value
+            if (OfferRepository.monitoringActive.value && (customKeywords.isNotEmpty() || maxPrice != null)) {
+                val matchesKeyword = customKeywords.isEmpty() || customKeywords.any { text.contains(it, ignoreCase = true) }
+                val matchesPrice = maxPrice == null || (price != null && price <= maxPrice)
+                if (matchesKeyword && matchesPrice) {
+                    TelegramMonitorService.notifyOffer(context, offer)
+                }
             }
         }
     }

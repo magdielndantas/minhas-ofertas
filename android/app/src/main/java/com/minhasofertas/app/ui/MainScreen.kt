@@ -46,11 +46,14 @@ import kotlinx.coroutines.launch
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import com.minhasofertas.app.data.ConfigManager
+import com.minhasofertas.app.ui.PriceHistoryBottomSheet
 import java.io.File
 
 enum class OfferFilter(val label: String) {
     ALL("Todas"),
+    FAVORITES("Favoritos ❤️"),
     WITH_COUPON("Com Cupom 🎟"),
     BIG_DISCOUNTS("Maiores Descontos 🔥"),
     ALL_TIME_LOW("Mínima Histórica 📉")
@@ -65,12 +68,16 @@ fun MainScreen(
     onSyncTelegramChannels: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf(OfferFilter.ALL) }
     var showSettings by remember { mutableStateOf(false) }
+    var selectedOfferForHistory by remember { mutableStateOf<GroupedOffer?>(null) }
+    var isRefreshing by remember { mutableStateOf(false) }
 
     val channels by ConfigManager.channels.collectAsState()
     val activeChannelsCount = channels.count { it.enabled }
+    val watchlist by OfferRepository.watchlist.collectAsState()
 
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
@@ -125,6 +132,7 @@ fun MainScreen(
             // Filtro por categoria rápida
             val matchesCategory = when (selectedFilter) {
                 OfferFilter.ALL -> true
+                OfferFilter.FAVORITES -> watchlist.containsKey(offer.groupKey)
                 OfferFilter.WITH_COUPON -> !offer.coupon.isNullOrBlank()
                 OfferFilter.BIG_DISCOUNTS -> (offer.discountPercent ?: 0) >= 15
                 OfferFilter.ALL_TIME_LOW -> offer.priceTrend == PriceTrend.ALL_TIME_LOW || offer.priceTrend == PriceTrend.PRICE_DROP
@@ -196,6 +204,14 @@ fun MainScreen(
                 onSyncTelegramChannels = onSyncTelegramChannels
             )
         }
+
+        selectedOfferForHistory?.let { offer ->
+            PriceHistoryBottomSheet(
+                offer = offer,
+                onDismiss = { selectedOfferForHistory = null }
+            )
+        }
+
         Column(
             modifier = Modifier
                 .padding(innerPadding)
@@ -287,46 +303,71 @@ fun MainScreen(
                 )
             }
 
-            // Lista de Ofertas Agrupadas
-            if (filteredOffers.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(32.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Box(
-                            modifier = Modifier
-                                .size(64.dp)
-                                .clip(CircleShape)
-                                .background(SurfaceContainerLow),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ShoppingBag,
-                                contentDescription = null,
-                                tint = OnSurfaceVariant,
-                                modifier = Modifier.size(32.dp)
+            // Feed de Ofertas com Pull-to-refresh
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = {
+                    isRefreshing = true
+                    coroutineScope.launch {
+                        onSyncTelegramChannels()
+                        delay(1200)
+                        isRefreshing = false
+                    }
+                },
+                modifier = Modifier.fillMaxSize()
+            ) {
+                if (filteredOffers.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Box(
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(CircleShape)
+                                    .background(SurfaceContainerLow),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (selectedFilter == OfferFilter.FAVORITES) Icons.Default.FavoriteBorder else Icons.Default.ShoppingBag,
+                                    contentDescription = null,
+                                    tint = OnSurfaceVariant,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = if (selectedFilter == OfferFilter.FAVORITES) {
+                                    "Nenhuma oferta na sua Lista de Desejos.\nToque no coração de uma oferta para monitorá-la!"
+                                } else if (isMonitoring) {
+                                    "Aguardando novas ofertas dos canais..."
+                                } else {
+                                    "Monitoramento pausado."
+                                },
+                                color = OnSurfaceVariant,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium
                             )
                         }
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = if (isMonitoring) "Aguardando novas ofertas dos canais..." else "Monitoramento pausado.",
-                            color = OnSurfaceVariant,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium
-                        )
                     }
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    contentPadding = PaddingValues(bottom = 24.dp)
-                ) {
-                    items(filteredOffers, key = { it.groupKey }) { offer ->
-                        ModernGroupedOfferCard(offer = offer)
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        contentPadding = PaddingValues(bottom = 24.dp)
+                    ) {
+                        items(filteredOffers, key = { it.groupKey }) { offer ->
+                            val isFav = watchlist.containsKey(offer.groupKey)
+                            ModernGroupedOfferCard(
+                                offer = offer,
+                                isFavorite = isFav,
+                                onToggleFavorite = { OfferRepository.toggleFavorite(offer.groupKey, offer.title) },
+                                onOpenHistory = { selectedOfferForHistory = offer }
+                            )
+                        }
                     }
                 }
             }
@@ -335,7 +376,12 @@ fun MainScreen(
 }
 
 @Composable
-fun ModernGroupedOfferCard(offer: GroupedOffer) {
+fun ModernGroupedOfferCard(
+    offer: GroupedOffer,
+    isFavorite: Boolean = false,
+    onToggleFavorite: () -> Unit = {},
+    onOpenHistory: () -> Unit = {}
+) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val coroutineScope = rememberCoroutineScope()
@@ -402,7 +448,7 @@ fun ModernGroupedOfferCard(offer: GroupedOffer) {
                         )
                 )
 
-                // Badges Superiores (Multi-fontes e Desconto)
+                // Badges Superiores (Multi-fontes, Desconto, Favorito e Compartilhar)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -446,19 +492,73 @@ fun ModernGroupedOfferCard(offer: GroupedOffer) {
                         }
                     }
 
-                    // Badge de Porcentagem de Desconto
-                    if (offer.discountPercent != null && offer.discountPercent > 0) {
+                    // Ações Rápidas (Desconto, Favorito, Compartilhar)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (offer.discountPercent != null && offer.discountPercent > 0) {
+                            Surface(
+                                shape = RoundedCornerShape(50),
+                                color = Color(0xFFD32F2F)
+                            ) {
+                                Text(
+                                    text = "-${offer.discountPercent}%",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+
+                        // Botão Favorito / Lista de Desejos
                         Surface(
-                            shape = RoundedCornerShape(50),
-                            color = Color(0xFFD32F2F)
+                            shape = CircleShape,
+                            color = Color(0xFF1E293B).copy(alpha = 0.75f),
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clickable { onToggleFavorite() }
                         ) {
-                            Text(
-                                text = "-${offer.discountPercent}%",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Black,
-                                color = Color.White,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                            )
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                    contentDescription = "Favoritar oferta",
+                                    tint = if (isFavorite) Color(0xFFE91E63) else Color.White,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+
+                        // Botão Compartilhar
+                        Surface(
+                            shape = CircleShape,
+                            color = Color(0xFF1E293B).copy(alpha = 0.75f),
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clickable {
+                                    val shareText = buildString {
+                                        append("${offer.title}\n")
+                                        if (offer.lowestPrice != null) append("🔥 Por R$ ${"%.2f".format(offer.lowestPrice)}\n")
+                                        if (!offer.coupon.isNullOrBlank()) append("🎟 Cupom: ${offer.coupon}\n")
+                                        append("🔗 ${offer.primaryLink}")
+                                    }
+                                    val sendIntent = Intent().apply {
+                                        action = Intent.ACTION_SEND
+                                        putExtra(Intent.EXTRA_TEXT, shareText)
+                                        type = "text/plain"
+                                    }
+                                    context.startActivity(Intent.createChooser(sendIntent, "Compartilhar Oferta"))
+                                }
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Share,
+                                    contentDescription = "Compartilhar oferta",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -620,43 +720,79 @@ fun ModernGroupedOfferCard(offer: GroupedOffer) {
                                     PriceTrend.ALL_TIME_LOW -> {
                                         Surface(
                                             shape = RoundedCornerShape(6.dp),
-                                            color = Color(0xFFD32F2F).copy(alpha = 0.16f)
+                                            color = Color(0xFFD32F2F).copy(alpha = 0.16f),
+                                            modifier = Modifier.clickable { onOpenHistory() }
                                         ) {
-                                            Text(
-                                                text = "🔥 MÍNIMA HISTÓRICA",
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.Black,
-                                                color = Color(0xFFD32F2F),
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                            )
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = "🔥 MÍNIMA HISTÓRICA",
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Black,
+                                                    color = Color(0xFFD32F2F)
+                                                )
+                                                Spacer(modifier = Modifier.width(3.dp))
+                                                Icon(
+                                                    imageVector = Icons.Default.Timeline,
+                                                    contentDescription = "Histórico de Preços",
+                                                    tint = Color(0xFFD32F2F),
+                                                    modifier = Modifier.size(11.dp)
+                                                )
+                                            }
                                         }
                                     }
                                     PriceTrend.PRICE_DROP -> {
                                         Surface(
                                             shape = RoundedCornerShape(6.dp),
-                                            color = Color(0xFF2E7D32).copy(alpha = 0.16f)
+                                            color = Color(0xFF2E7D32).copy(alpha = 0.16f),
+                                            modifier = Modifier.clickable { onOpenHistory() }
                                         ) {
-                                            Text(
-                                                text = "📉 QUEDA DE PREÇO",
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.Black,
-                                                color = Color(0xFF2E7D32),
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                            )
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = "📉 QUEDA DE PREÇO",
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Black,
+                                                    color = Color(0xFF2E7D32)
+                                                )
+                                                Spacer(modifier = Modifier.width(3.dp))
+                                                Icon(
+                                                    imageVector = Icons.Default.Timeline,
+                                                    contentDescription = "Histórico de Preços",
+                                                    tint = Color(0xFF2E7D32),
+                                                    modifier = Modifier.size(11.dp)
+                                                )
+                                            }
                                         }
                                     }
                                     else -> {
                                         Surface(
                                             shape = RoundedCornerShape(6.dp),
-                                            color = Primary.copy(alpha = 0.15f)
+                                            color = Primary.copy(alpha = 0.15f),
+                                            modifier = Modifier.clickable { onOpenHistory() }
                                         ) {
-                                            Text(
-                                                text = if (offer.sources.size > 1) "★ MENOR PREÇO" else "MELHOR PREÇO",
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.Black,
-                                                color = Primary,
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                            )
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = if (offer.sources.size > 1) "★ MENOR PREÇO" else "MELHOR PREÇO",
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Black,
+                                                    color = Primary
+                                                )
+                                                Spacer(modifier = Modifier.width(3.dp))
+                                                Icon(
+                                                    imageVector = Icons.Default.Timeline,
+                                                    contentDescription = "Histórico de Preços",
+                                                    tint = Primary,
+                                                    modifier = Modifier.size(11.dp)
+                                                )
+                                            }
                                         }
                                     }
                                 }

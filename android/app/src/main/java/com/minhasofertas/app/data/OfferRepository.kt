@@ -4,12 +4,15 @@ import android.content.Context
 import com.minhasofertas.app.data.local.AppDatabase
 import com.minhasofertas.app.data.local.OfferEntity
 import com.minhasofertas.app.data.local.PriceHistoryEntity
+import com.minhasofertas.app.data.local.WatchlistEntity
 import com.minhasofertas.app.util.UrlResolver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 
@@ -22,6 +25,9 @@ object OfferRepository {
 
     private val _monitoringActive = MutableStateFlow(true)
     val monitoringActive = _monitoringActive.asStateFlow()
+
+    private val _watchlist = MutableStateFlow<Map<String, WatchlistEntity>>(emptyMap())
+    val watchlist = _watchlist.asStateFlow()
 
     // Cache em memória de estatísticas de preços para renderização instantânea
     private val minPriceCache = ConcurrentHashMap<String, Double>()
@@ -37,6 +43,41 @@ object OfferRepository {
                 _offers.value = domainOffers
             }
         }
+        repositoryScope.launch {
+            db.watchlistDao().getAllWatchlistFlow().collect { list ->
+                _watchlist.value = list.associateBy { it.groupKey }
+            }
+        }
+    }
+
+    fun toggleFavorite(groupKey: String, title: String) {
+        repositoryScope.launch {
+            val db = database ?: return@launch
+            if (_watchlist.value.containsKey(groupKey)) {
+                db.watchlistDao().delete(groupKey)
+            } else {
+                db.watchlistDao().insert(WatchlistEntity(groupKey = groupKey, title = title))
+            }
+        }
+    }
+
+    fun setTargetPrice(groupKey: String, targetPrice: Double?) {
+        repositoryScope.launch {
+            database?.watchlistDao()?.updateTargetPrice(groupKey, targetPrice)
+        }
+    }
+
+    fun isFavorite(groupKey: String): Boolean {
+        return _watchlist.value.containsKey(groupKey)
+    }
+
+    fun getWatchlistItem(groupKey: String): WatchlistEntity? {
+        return _watchlist.value[groupKey]
+    }
+
+    fun getPriceHistoryFlow(groupKey: String): Flow<List<PriceHistoryEntity>> {
+        val db = database ?: return flowOf(emptyList())
+        return db.priceHistoryDao().getHistoryForGroupFlow(groupKey)
     }
 
     fun computeGroupKey(offer: Offer): String {
