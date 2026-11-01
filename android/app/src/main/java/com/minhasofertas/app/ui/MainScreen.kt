@@ -43,6 +43,10 @@ import com.minhasofertas.app.data.PriceTrend
 import com.minhasofertas.app.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import com.minhasofertas.app.data.ConfigManager
 import java.io.File
 
 enum class OfferFilter(val label: String) {
@@ -57,10 +61,51 @@ enum class OfferFilter(val label: String) {
 fun MainScreen(
     offers: List<Offer>,
     isMonitoring: Boolean,
-    onToggleMonitoring: () -> Unit
+    onToggleMonitoring: () -> Unit,
+    onSyncTelegramChannels: () -> Unit = {}
 ) {
+    val context = LocalContext.current
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf(OfferFilter.ALL) }
+    var showSettings by remember { mutableStateOf(false) }
+
+    val channels by ConfigManager.channels.collectAsState()
+    val activeChannelsCount = channels.count { it.enabled }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            try {
+                context.contentResolver.openOutputStream(uri)?.use { output ->
+                    output.write(ConfigManager.exportConfigJson().toByteArray(Charsets.UTF_8))
+                }
+                Toast.makeText(context, "Configurações exportadas com sucesso!", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                Toast.makeText(context, "Falha ao exportar arquivo", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val content = context.contentResolver.openInputStream(uri)?.use { input ->
+                    input.reader(Charsets.UTF_8).readText()
+                }
+                if (content != null && ConfigManager.importConfigJson(content)) {
+                    onSyncTelegramChannels()
+                    Toast.makeText(context, "Configurações importadas com sucesso!", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(context, "Arquivo JSON inválido", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "Falha ao ler arquivo selecionado", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     // Agrupa ofertas idênticas de múltiplos canais
     val groupedOffers = remember(offers) {
@@ -102,7 +147,7 @@ fun MainScreen(
                             letterSpacing = (-0.5).sp
                         )
                         Text(
-                            text = if (isMonitoring) "Ao vivo • 14 canais integrados" else "Monitoramento pausado",
+                            text = if (isMonitoring) "Ao vivo • $activeChannelsCount canais ativos" else "Monitoramento pausado",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
                             color = if (isMonitoring) Color(0xFF2E7D32) else OnSurfaceVariant
@@ -110,6 +155,15 @@ fun MainScreen(
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = { showSettings = true }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = "Configurações de Canais e Alertas",
+                            tint = OnSurfaceVariant
+                        )
+                    }
                     IconButton(
                         onClick = onToggleMonitoring,
                         modifier = Modifier
@@ -130,6 +184,18 @@ fun MainScreen(
         },
         containerColor = Surface
     ) { innerPadding ->
+        if (showSettings) {
+            SettingsDialog(
+                onDismiss = { showSettings = false },
+                onExportJson = {
+                    exportLauncher.launch("minhas_ofertas_config.json")
+                },
+                onImportJson = {
+                    importLauncher.launch(arrayOf("application/json", "text/*"))
+                },
+                onSyncTelegramChannels = onSyncTelegramChannels
+            )
+        }
         Column(
             modifier = Modifier
                 .padding(innerPadding)

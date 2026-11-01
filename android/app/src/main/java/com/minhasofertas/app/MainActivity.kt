@@ -51,6 +51,9 @@ class MainActivity : ComponentActivity() {
                             isMonitoring = isMonitoring,
                             onToggleMonitoring = {
                                 toggleMonitoringService(!isMonitoring)
+                            },
+                            onSyncTelegramChannels = {
+                                telegramManager.syncChannels()
                             }
                         )
                     } else {

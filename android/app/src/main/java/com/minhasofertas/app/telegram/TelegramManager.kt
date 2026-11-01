@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build
 import android.util.Log
 import com.minhasofertas.app.data.AppConfig
+import com.minhasofertas.app.data.ConfigManager
 import com.minhasofertas.app.data.Offer
 import com.minhasofertas.app.data.OfferRepository
 import com.minhasofertas.app.data.PriceParser
@@ -237,8 +238,14 @@ class TelegramManager(private val context: Context) : Client.ResultHandler {
         }
     }
 
+    fun syncChannels() {
+        searchAndJoinConfiguredChannels()
+    }
+
     private fun searchAndJoinConfiguredChannels() {
-        for (username in AppConfig.DEFAULT_CHANNELS) {
+        val configured = ConfigManager.getEnabledChannelUsernames()
+        val targetChannels = if (configured.isNotEmpty()) configured else AppConfig.DEFAULT_CHANNELS
+        for (username in targetChannels) {
             client?.send(TdApi.SearchPublicChat(username)) { result ->
                 if (result is TdApi.Chat) {
                     chatTitles[result.id] = result.title
@@ -250,6 +257,12 @@ class TelegramManager(private val context: Context) : Client.ResultHandler {
     }
 
     private fun handleNewMessage(message: TdApi.Message) {
+        val channelUsername = chatUsernames[message.chatId]
+        val enabledChannels = ConfigManager.getEnabledChannelUsernames()
+        if (channelUsername != null && enabledChannels.isNotEmpty() && !enabledChannels.contains(channelUsername.lowercase())) {
+            return
+        }
+
         val (text, entityUrls) = when (val content = message.content) {
             is TdApi.MessageText -> {
                 val urls = content.text.entities?.mapNotNull { entity ->
@@ -286,14 +299,19 @@ class TelegramManager(private val context: Context) : Client.ResultHandler {
             else -> null
         } ?: return
 
-        if (!PriceParser.isOfferMatching(text)) return
+        if (!PriceParser.isOfferMatching(
+                text = text,
+                keywords = ConfigManager.keywords.value,
+                ignoreTerms = ConfigManager.ignoreTerms.value,
+                maxPrice = ConfigManager.maxPriceAlert.value
+            )
+        ) return
 
         val (price, originalPrice) = PriceParser.extractPrices(text)
         val coupon = PriceParser.extractCoupon(text)
         val title = PriceParser.extractProductTitle(text)
         val storeLink = PriceParser.extractStoreLink(text, entityUrls)
         val channelTitle = chatTitles[message.chatId] ?: "Canal Telegram"
-        val channelUsername = chatUsernames[message.chatId]
 
         val link = if (channelUsername != null) {
             "https://t.me/$channelUsername/${message.id}"

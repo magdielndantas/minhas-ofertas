@@ -37,6 +37,18 @@ class UserPreferences(context: Context) {
     val isApiConfigured: Boolean
         get() = apiId > 0 && apiHash.isNotBlank()
 
+    var maxPriceAlert: Double
+        get() = prefs.getString("max_price_alert", "")?.toDoubleOrNull() ?: 0.0
+        set(value) = prefs.edit().putString("max_price_alert", if (value > 0) value.toString() else "").apply()
+
+    var keywordsString: String
+        get() = prefs.getString("custom_keywords", AppConfig.DEFAULT_KEYWORDS.joinToString(",")) ?: ""
+        set(value) = prefs.edit().putString("custom_keywords", value).apply()
+
+    var ignoreTermsString: String
+        get() = prefs.getString("custom_ignore_terms", AppConfig.DEFAULT_IGNORE_TERMS.joinToString(",")) ?: ""
+        set(value) = prefs.edit().putString("custom_ignore_terms", value).apply()
+
     init {
         // Migra credenciais antigas em texto puro se existirem
         val legacyPrefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
