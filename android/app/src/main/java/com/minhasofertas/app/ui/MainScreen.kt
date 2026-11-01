@@ -39,6 +39,7 @@ import com.minhasofertas.app.data.GroupedOffer
 import com.minhasofertas.app.data.Offer
 import com.minhasofertas.app.data.OfferRepository
 import com.minhasofertas.app.data.OfferSource
+import com.minhasofertas.app.data.PriceTrend
 import com.minhasofertas.app.ui.theme.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -47,7 +48,8 @@ import java.io.File
 enum class OfferFilter(val label: String) {
     ALL("Todas"),
     WITH_COUPON("Com Cupom 🎟"),
-    BIG_DISCOUNTS("Maiores Descontos 🔥")
+    BIG_DISCOUNTS("Maiores Descontos 🔥"),
+    ALL_TIME_LOW("Mínima Histórica 📉")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -80,6 +82,7 @@ fun MainScreen(
                 OfferFilter.ALL -> true
                 OfferFilter.WITH_COUPON -> !offer.coupon.isNullOrBlank()
                 OfferFilter.BIG_DISCOUNTS -> (offer.discountPercent ?: 0) >= 15
+                OfferFilter.ALL_TIME_LOW -> offer.priceTrend == PriceTrend.ALL_TIME_LOW || offer.priceTrend == PriceTrend.PRICE_DROP
             }
 
             matchesSearch && matchesCategory
@@ -547,17 +550,49 @@ fun ModernGroupedOfferCard(offer: GroupedOffer) {
                     Column {
                         if (offer.lowestPrice != null) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = Primary.copy(alpha = 0.15f)
-                                ) {
-                                    Text(
-                                        text = if (offer.sources.size > 1) "★ MENOR PREÇO" else "MELHOR PREÇO",
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Black,
-                                        color = Primary,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
+                                when (offer.priceTrend) {
+                                    PriceTrend.ALL_TIME_LOW -> {
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = Color(0xFFD32F2F).copy(alpha = 0.16f)
+                                        ) {
+                                            Text(
+                                                text = "🔥 MÍNIMA HISTÓRICA",
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Black,
+                                                color = Color(0xFFD32F2F),
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                    PriceTrend.PRICE_DROP -> {
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = Color(0xFF2E7D32).copy(alpha = 0.16f)
+                                        ) {
+                                            Text(
+                                                text = "📉 QUEDA DE PREÇO",
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Black,
+                                                color = Color(0xFF2E7D32),
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                    else -> {
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = Primary.copy(alpha = 0.15f)
+                                        ) {
+                                            Text(
+                                                text = if (offer.sources.size > 1) "★ MENOR PREÇO" else "MELHOR PREÇO",
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Black,
+                                                color = Primary,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
                                 }
                                 if (offer.originalPrice != null && offer.originalPrice > offer.lowestPrice) {
                                     Spacer(modifier = Modifier.width(8.dp))

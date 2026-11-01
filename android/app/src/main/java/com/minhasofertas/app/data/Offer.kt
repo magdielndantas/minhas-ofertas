@@ -2,6 +2,13 @@ package com.minhasofertas.app.data
 
 import androidx.compose.runtime.Immutable
 
+enum class PriceTrend {
+    ALL_TIME_LOW, // Menor preço já registrado
+    PRICE_DROP,   // Queda de preço recente
+    PRICE_UP,     // Preço subiu
+    STABLE        // Preço estável ou primeira ocorrência
+}
+
 @Immutable
 data class Offer(
     val id: Long = 0,
@@ -30,7 +37,10 @@ data class GroupedOffer(
     val primaryLink: String,
     val message: String,
     val sources: List<OfferSource>,
-    val latestTimestamp: String
+    val latestTimestamp: String,
+    val priceTrend: PriceTrend = PriceTrend.STABLE,
+    val historicalMinPrice: Double? = null,
+    val previousPrice: Double? = null
 )
 
 @Immutable

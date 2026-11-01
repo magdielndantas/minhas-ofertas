@@ -3,12 +3,15 @@ package com.minhasofertas.app.data
 import android.content.Context
 import com.minhasofertas.app.data.local.AppDatabase
 import com.minhasofertas.app.data.local.OfferEntity
+import com.minhasofertas.app.data.local.PriceHistoryEntity
+import com.minhasofertas.app.util.UrlResolver
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
 
 object OfferRepository {
     private val repositoryScope = CoroutineScope(Dispatchers.IO + Job())
@@ -20,26 +23,85 @@ object OfferRepository {
     private val _monitoringActive = MutableStateFlow(false)
     val monitoringActive = _monitoringActive.asStateFlow()
 
+    // Cache em memória de estatísticas de preços para renderização instantânea
+    private val minPriceCache = ConcurrentHashMap<String, Double>()
+    private val previousPriceCache = ConcurrentHashMap<String, Double>()
+
     fun init(context: Context) {
         if (database != null) return
         val db = AppDatabase.getInstance(context)
         database = db
         repositoryScope.launch {
             db.offerDao().getAllOffersFlow().collect { entities ->
-                _offers.value = entities.map { it.toOffer() }
+                val domainOffers = entities.map { it.toOffer() }
+                _offers.value = domainOffers
             }
         }
     }
 
-    fun addOffer(offer: Offer) {
-        val current = _offers.value
-        // Evita duplicata exata no mesmo canal com a mesma mensagem ou mesmo link de loja
-        val exists = current.any {
-            it.channel == offer.channel && (it.message == offer.message || (it.storeLink != null && it.storeLink == offer.storeLink))
+    fun computeGroupKey(offer: Offer): String {
+        // 1. Identificador canônico de e-commerce (ASIN, MLB, Shopee, Magalu, Kabum)
+        val canonical = offer.storeLink?.let { UrlResolver.extractCanonicalKey(it) }
+        if (canonical != null) return canonical
+
+        // 2. Simplificação de link de loja direta
+        if (!offer.storeLink.isNullOrBlank()) {
+            val cleanUrl = offer.storeLink.substringBefore("?").lowercase()
+            if (cleanUrl.length >= 10) return cleanUrl
         }
-        if (!exists) {
-            repositoryScope.launch {
-                database?.offerDao()?.insertOffer(OfferEntity.fromOffer(offer))
+
+        // 3. Normalização textual do título
+        if (!offer.product.isNullOrBlank()) {
+            val norm = PriceParser.normalizeTitleForGrouping(offer.product)
+            if (norm.length >= 4) return norm
+        }
+
+        val title = PriceParser.extractProductTitle(offer.message)
+        val norm = PriceParser.normalizeTitleForGrouping(title)
+        return if (norm.length >= 4) norm else "single_${offer.id}"
+    }
+
+    fun addOffer(rawOffer: Offer) {
+        val current = _offers.value
+        val exists = current.any {
+            it.channel == rawOffer.channel && (it.message == rawOffer.message || (it.storeLink != null && it.storeLink == rawOffer.storeLink))
+        }
+        if (exists) return
+
+        repositoryScope.launch {
+            // Desencurta URL de afiliado/encurtador de forma assíncrona on-device
+            val resolvedStoreLink = rawOffer.storeLink?.let { UrlResolver.resolveRedirect(it) } ?: rawOffer.storeLink
+            val offer = if (resolvedStoreLink != rawOffer.storeLink) {
+                rawOffer.copy(storeLink = resolvedStoreLink)
+            } else {
+                rawOffer
+            }
+
+            // Salva a oferta no Room
+            database?.offerDao()?.insertOffer(OfferEntity.fromOffer(offer))
+
+            // Registra no histórico de preços se houver preço
+            val price = offer.price
+            if (price != null && price > 0) {
+                val groupKey = computeGroupKey(offer)
+                val db = database
+                if (db != null) {
+                    val prevMin = db.priceHistoryDao().getHistoricalMinPrice(groupKey)
+                    val recents = db.priceHistoryDao().getRecentPrices(groupKey)
+                    if (recents.isNotEmpty()) {
+                        previousPriceCache[groupKey] = recents.first()
+                    }
+                    if (prevMin != null) {
+                        minPriceCache[groupKey] = prevMin
+                    }
+                    db.priceHistoryDao().insert(
+                        PriceHistoryEntity(
+                            groupKey = groupKey,
+                            price = price,
+                            channel = offer.channel
+                        )
+                    )
+                }
             }
         }
     }
@@ -57,33 +119,22 @@ object OfferRepository {
     fun clearOffers() {
         repositoryScope.launch {
             database?.offerDao()?.clearAll()
+            database?.priceHistoryDao()?.clearAll()
+            minPriceCache.clear()
+            previousPriceCache.clear()
         }
     }
 
     /**
      * Agrupa ofertas de produtos idênticos vindas de fontes/canais diferentes,
-     * calculando o menor preço, descontos e listando todos os canais de origem.
+     * calculando o menor preço, descontos, fontes e indicador de tendência.
      */
     fun groupOffers(rawOffers: List<Offer>): List<GroupedOffer> {
         val groups = linkedMapOf<String, MutableList<Offer>>()
 
         for (offer in rawOffers) {
-            val key = when {
-                !offer.storeLink.isNullOrBlank() -> {
-                    // Simplifica URLs para chave comum (ex: sem parâmetros de rastreamento)
-                    offer.storeLink.substringBefore("?").lowercase()
-                }
-                !offer.product.isNullOrBlank() -> {
-                    PriceParser.normalizeTitleForGrouping(offer.product)
-                }
-                else -> {
-                    val title = PriceParser.extractProductTitle(offer.message)
-                    PriceParser.normalizeTitleForGrouping(title)
-                }
-            }
-
-            val finalKey = if (key.length >= 4) key else "single_${offer.id}"
-            groups.getOrPut(finalKey) { mutableListOf() }.add(offer)
+            val key = computeGroupKey(offer)
+            groups.getOrPut(key) { mutableListOf() }.add(offer)
         }
 
         return groups.map { (key, groupList) ->
@@ -124,6 +175,18 @@ object OfferRepository {
                 )
             }.distinctBy { it.channel }
 
+            // Cálculo da tendência de preço (Mínima histórica, Queda ou Estável)
+            val historicalMin = minPriceCache[key]
+            val previousPrice = previousPriceCache[key]
+            val trend = when {
+                lowestPrice != null && historicalMin != null && lowestPrice < historicalMin -> PriceTrend.ALL_TIME_LOW
+                lowestPrice != null && previousPrice != null && lowestPrice < previousPrice -> PriceTrend.PRICE_DROP
+                lowestPrice != null && previousPrice != null && lowestPrice > previousPrice -> PriceTrend.PRICE_UP
+                discountPercent != null && discountPercent >= 25 -> PriceTrend.ALL_TIME_LOW
+                discountPercent != null && discountPercent >= 10 -> PriceTrend.PRICE_DROP
+                else -> PriceTrend.STABLE
+            }
+
             GroupedOffer(
                 groupKey = key,
                 title = title,
@@ -135,7 +198,10 @@ object OfferRepository {
                 primaryLink = primaryLink,
                 message = bestOffer.message,
                 sources = sources,
-                latestTimestamp = firstOffer.timestamp
+                latestTimestamp = firstOffer.timestamp,
+                priceTrend = trend,
+                historicalMinPrice = historicalMin,
+                previousPrice = previousPrice
             )
         }
     }
