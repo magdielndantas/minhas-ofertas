@@ -16,12 +16,14 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Sensors
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -33,6 +35,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.minhasofertas.app.telegram.AuthState
@@ -53,10 +57,17 @@ fun OnboardingScreen(
     var onboardingStep by remember { mutableStateOf(if (authState is AuthState.NeedApiCredentials) 0 else 3) }
     var apiIdInput by remember { mutableStateOf("") }
     var apiHashInput by remember { mutableStateOf("") }
-    var phoneNumber by remember { mutableStateOf("+55") }
-    var code by remember { mutableStateOf("") }
+    var phoneDigits by remember { mutableStateOf("") }
+    var codeDigits by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var isPasswordVisible by remember { mutableStateOf(false) }
     var isSubmitting by remember { mutableStateOf(false) }
+
+    val isApiIdValid = InputFormatters.isValidApiId(apiIdInput)
+    val isApiHashValid = InputFormatters.isValidApiHash(apiHashInput)
+    val (isPhoneValid, phoneValidationError) = InputFormatters.validateBrazilianPhone(phoneDigits)
+    val isCodeValid = codeDigits.length == 5
+    val isPasswordValid = password.isNotBlank()
 
     LaunchedEffect(authState) {
         isSubmitting = false
@@ -228,12 +239,12 @@ fun OnboardingScreen(
                                 ) {
                                     Text("Abrir my.telegram.org", fontWeight = FontWeight.Bold)
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
                                 }
                             }
 
                             2 -> {
-                                // Formulário de Entrada das Chaves
+                                // Formulário de Entrada das Chaves com Validação
                                 Box(
                                     modifier = Modifier
                                         .size(64.dp)
@@ -266,28 +277,47 @@ fun OnboardingScreen(
 
                                 OutlinedTextField(
                                     value = apiIdInput,
-                                    onValueChange = { apiIdInput = it },
-                                    label = { Text("API ID (Apenas números)") },
+                                    onValueChange = { raw ->
+                                        apiIdInput = raw.filter { it.isDigit() }.take(10)
+                                    },
+                                    label = { Text("API ID") },
                                     placeholder = { Text("Ex: 12345678") },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                     singleLine = true,
+                                    isError = apiIdInput.isNotEmpty() && !isApiIdValid,
+                                    supportingText = {
+                                        if (apiIdInput.isNotEmpty() && !isApiIdValid) {
+                                            Text("O API ID deve conter entre 6 e 10 números.", color = MaterialTheme.colorScheme.error)
+                                        } else {
+                                            Text("Somente dígitos numéricos.")
+                                        }
+                                    },
                                     shape = RoundedCornerShape(16.dp),
                                     modifier = Modifier.fillMaxWidth()
                                 )
-                                Spacer(modifier = Modifier.height(12.dp))
+                                Spacer(modifier = Modifier.height(10.dp))
                                 OutlinedTextField(
                                     value = apiHashInput,
-                                    onValueChange = { apiHashInput = it },
-                                    label = { Text("API HASH (32 caracteres hexadecimais)") },
-                                    placeholder = { Text("Ex: 0123456789abcdef0123456789abcdef") },
+                                    onValueChange = { raw ->
+                                        apiHashInput = raw.trim().lowercase().filter { it in '0'..'9' || it in 'a'..'f' }.take(32)
+                                    },
+                                    label = { Text("API HASH") },
+                                    placeholder = { Text("32 caracteres hexadecimais") },
                                     singleLine = true,
+                                    isError = apiHashInput.isNotEmpty() && !isApiHashValid,
+                                    supportingText = {
+                                        Text(
+                                            text = "${apiHashInput.length}/32 caracteres hexadecimais",
+                                            color = if (apiHashInput.isNotEmpty() && !isApiHashValid) MaterialTheme.colorScheme.error else OnSurfaceVariant
+                                        )
+                                    },
                                     shape = RoundedCornerShape(16.dp),
                                     modifier = Modifier.fillMaxWidth()
                                 )
                             }
 
                             3 -> {
-                                // Telefone
+                                // Telefone com Máscara e Validação
                                 Box(
                                     modifier = Modifier
                                         .size(64.dp)
@@ -313,23 +343,75 @@ fun OnboardingScreen(
                                 )
                                 Spacer(modifier = Modifier.height(10.dp))
                                 Text(
-                                    text = "Informe seu número com código do país e DDD (Exemplo: +5511999999999 ou 11999999999).",
+                                    text = "Informe o DDD e o número do celular. A máscara formata automaticamente.",
                                     fontSize = 14.sp,
                                     color = OnSurfaceVariant
                                 )
                                 Spacer(modifier = Modifier.height(20.dp))
-                                OutlinedTextField(
-                                    value = phoneNumber,
-                                    onValueChange = { phoneNumber = it },
-                                    placeholder = { Text("+55...") },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                                    singleLine = true,
-                                    shape = RoundedCornerShape(16.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                )
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // Chip fixo de país Brasil (+55)
+                                    Surface(
+                                        shape = RoundedCornerShape(16.dp),
+                                        color = SurfaceContainerLowest,
+                                        tonalElevation = 2.dp,
+                                        modifier = Modifier
+                                            .height(56.dp)
+                                            .padding(end = 8.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 14.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "\uD83C\uDDE7\uD83C\uDDF7 +55",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 15.sp,
+                                                color = OnSurface
+                                            )
+                                        }
+                                    }
+
+                                    // Campo formatado do Telefone
+                                    OutlinedTextField(
+                                        value = InputFormatters.formatBrazilianPhone(phoneDigits),
+                                        onValueChange = { raw ->
+                                            val digits = raw.filter { it.isDigit() }
+                                            val clean = if (digits.startsWith("55") && digits.length > 11) digits.drop(2) else digits
+                                            phoneDigits = clean.take(11)
+                                        },
+                                        placeholder = { Text("(11) 99999-9999") },
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                                        singleLine = true,
+                                        isError = phoneDigits.isNotEmpty() && !isPhoneValid,
+                                        shape = RoundedCornerShape(16.dp),
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(6.dp))
+                                if (phoneDigits.isNotEmpty() && !isPhoneValid) {
+                                    Text(
+                                        text = phoneValidationError ?: "Número inválido",
+                                        color = MaterialTheme.colorScheme.error,
+                                        fontSize = 12.sp,
+                                        modifier = Modifier.padding(start = 4.dp)
+                                    )
+                                } else if (isPhoneValid) {
+                                    Text(
+                                        text = "Número internacional: +55 $phoneDigits",
+                                        color = Primary,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        modifier = Modifier.padding(start = 4.dp)
+                                    )
+                                }
 
                                 if (authState is AuthState.Initial || authState is AuthState.WaitParameters) {
-                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Spacer(modifier = Modifier.height(14.dp))
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         modifier = Modifier.padding(start = 4.dp)
@@ -350,7 +432,7 @@ fun OnboardingScreen(
                             }
 
                             4 -> {
-                                // Código OTP
+                                // Código OTP com Máscara de 5 Dígitos
                                 Box(
                                     modifier = Modifier
                                         .size(64.dp)
@@ -399,18 +481,34 @@ fun OnboardingScreen(
                                     }
                                 }
 
-                                Spacer(modifier = Modifier.height(16.dp))
+                                Spacer(modifier = Modifier.height(20.dp))
                                 OutlinedTextField(
-                                    value = code,
-                                    onValueChange = { code = it },
-                                    placeholder = { Text("Código de 5 dígitos") },
+                                    value = codeDigits,
+                                    onValueChange = { raw ->
+                                        codeDigits = raw.filter { it.isDigit() }.take(5)
+                                    },
+                                    placeholder = { Text("0 0 0 0 0", textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()) },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                     singleLine = true,
+                                    textStyle = LocalTextStyle.current.copy(
+                                        textAlign = TextAlign.Center,
+                                        fontSize = 26.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 8.sp
+                                    ),
                                     shape = RoundedCornerShape(16.dp),
                                     modifier = Modifier.fillMaxWidth()
                                 )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "${codeDigits.length} de 5 dígitos",
+                                    fontSize = 12.sp,
+                                    color = if (isCodeValid) Primary else OnSurfaceVariant,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
 
-                                Spacer(modifier = Modifier.height(8.dp))
+                                Spacer(modifier = Modifier.height(10.dp))
                                 TextButton(
                                     onClick = { onResendCode() },
                                     modifier = Modifier.align(Alignment.CenterHorizontally)
@@ -425,7 +523,7 @@ fun OnboardingScreen(
                             }
 
                             5 -> {
-                                // Senha 2FA
+                                // Senha 2FA com Toggle de Visibilidade
                                 Box(
                                     modifier = Modifier
                                         .size(64.dp)
@@ -460,7 +558,16 @@ fun OnboardingScreen(
                                     value = password,
                                     onValueChange = { password = it },
                                     placeholder = { Text("Senha 2FA") },
-                                    visualTransformation = PasswordVisualTransformation(),
+                                    visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                    trailingIcon = {
+                                        IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
+                                            Icon(
+                                                imageVector = if (isPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                                contentDescription = if (isPasswordVisible) "Ocultar senha" else "Exibir senha",
+                                                tint = OnSurfaceVariant
+                                            )
+                                        }
+                                    },
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                                     singleLine = true,
                                     shape = RoundedCornerShape(16.dp),
@@ -490,6 +597,16 @@ fun OnboardingScreen(
             }
 
             // Barra Inferior de Ação
+            val isStepButtonEnabled = when (onboardingStep) {
+                0 -> true
+                1 -> true
+                2 -> isApiIdValid && isApiHashValid
+                3 -> isPhoneValid && (authState is AuthState.WaitPhoneNumber)
+                4 -> isCodeValid
+                5 -> isPasswordValid
+                else -> true
+            }
+
             Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
                 Button(
                     onClick = {
@@ -497,33 +614,33 @@ fun OnboardingScreen(
                             0 -> onboardingStep = 1
                             1 -> onboardingStep = 2
                             2 -> {
-                                val parsedId = apiIdInput.trim().toIntOrNull()
-                                if (parsedId != null && apiHashInput.isNotBlank()) {
+                                val parsedId = apiIdInput.toIntOrNull()
+                                if (parsedId != null && isApiHashValid) {
                                     onConfigureApi(parsedId, apiHashInput.trim())
                                     onboardingStep = 3
                                 }
                             }
                             3 -> {
-                                if (phoneNumber.isNotBlank() && !isSubmitting) {
+                                if (isPhoneValid && !isSubmitting) {
                                     isSubmitting = true
-                                    onSendPhoneNumber(phoneNumber.trim())
+                                    onSendPhoneNumber("+55$phoneDigits")
                                 }
                             }
                             4 -> {
-                                if (code.isNotBlank() && !isSubmitting) {
+                                if (isCodeValid && !isSubmitting) {
                                     isSubmitting = true
-                                    onSendCode(code.trim())
+                                    onSendCode(codeDigits.trim())
                                 }
                             }
                             5 -> {
-                                if (password.isNotBlank() && !isSubmitting) {
+                                if (isPasswordValid && !isSubmitting) {
                                     isSubmitting = true
                                     onSendPassword(password)
                                 }
                             }
                         }
                     },
-                    enabled = !isSubmitting,
+                    enabled = isStepButtonEnabled && !isSubmitting,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
@@ -545,7 +662,7 @@ fun OnboardingScreen(
                                 0 -> "Começar Agora"
                                 1 -> "Entendi, Inserir Credenciais"
                                 2 -> "Salvar e Continuar"
-                                3 -> "Enviar Código"
+                                3 -> if (authState is AuthState.Initial || authState is AuthState.WaitParameters) "Conectando..." else "Enviar Código"
                                 4 -> "Validar Código"
                                 5 -> "Concluir Conexão"
                                 else -> "Avançar"
